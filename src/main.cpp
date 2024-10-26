@@ -1,6 +1,6 @@
 #include "CubeCell_NeoPixel.h"
 #include <Arduino.h>
-// seams to not working...
+// seams to not working on cubecell ...
 // #include <DallasTemperature.h>
 #include <EEPROM.h>
 #include <HX711.h>
