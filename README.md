@@ -25,6 +25,9 @@ git push -u origin master
 git add .
 commit -m "update"
 
+Il faut exec cette cmd pur pouvoir créer un nouveau repos sur le github
+
+Sinon il faut obligatoirement le crèer sur github avant 
 curl -H "Authorization: token YOUR_GITHUB_TOKEN" \
      -d '{"name": "monprojet"}' \
      https://api.github.com/user/repos
