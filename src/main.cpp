@@ -1,17 +1,13 @@
 #include "CubeCell_NeoPixel.h"
+#include "FRAM.h"
+#include "FRAM_MULTILANGUAGE.h"
 #include <Arduino.h>
 #include <EEPROM.h>
 #include <HX711.h>
 #include <LoRaWan_APP.h>
 #include <OneWire.h>
-// #include <SPI.h>
-// #include "Adafruit_EEPROM_I2C.h"
-// #include "Adafruit_FRAM_I2C.h"
-// #include <Wire.h>
 
-#include "FRAM.h"
-#include "FRAM_MULTILANGUAGE.h"
-
+/*
 #if BOARD == cubecell_module_plus
 // module
 #define VEXT_PIN GPIO10
@@ -23,6 +19,10 @@
 #define ONE_WIRE_BUS GPIO12
 #define NEOPIXEL_DIN_PIN GPIO13
 #endif
+*/
+#define VEXT_PIN GPIO10
+#define ONE_WIRE_BUS UART_TX2
+#define NEOPIXEL_DIN_PIN GPIO15
 
 #define VEXT1_PIN GPIO7
 #define VEXT_VBAT_PIN GPIO5
@@ -50,7 +50,8 @@ typedef enum mycolor {
  * RGB green means received done;
  */
 
-/*
+#define LORAINRAE 1
+#ifdef LORAINRAE
 // OTAA  chip id and ssl key OK
 // hh=$(openssl rand -hex 8);echo $hh;echo $hh|sed 's/\(..\)/0x\1, /g'
 // 984505854ed83839
@@ -59,12 +60,12 @@ uint8_t appEui[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 // hh=$(openssl rand -hex 16);echo $hh;echo $hh|sed 's/\(..\)/0x\1, /g'
 // 2b4178609b1a32a88c5271ab05eb9980
 uint8_t appKey[] = { 0x2b, 0x41, 0x78, 0x60, 0x9b, 0x1a, 0x32, 0xa8, 0x8c, 0x52, 0x71, 0xab, 0x05, 0xeb, 0x99, 0x80 };
-*/
-
+#else
 // OTAA : maison joining ok but where? But no TTN
 uint8_t devEui[] = { 0x22, 0x32, 0x33, 0x00, 0x00, 0x88, 0x88, 0x02 }; // ori 0x02
 uint8_t appEui[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 uint8_t appKey[] = { 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x66, 0x01 };
+#endif
 
 /* ABP para*/
 uint8_t nwkSKey[] = { 0x15, 0xb1, 0xd0, 0xef, 0xa4, 0x63, 0xdf, 0xbe, 0x3d, 0x11, 0x18, 0x1e, 0x1e, 0xc7, 0xda, 0x85 };
@@ -216,6 +217,8 @@ void dev_time_updated()
 // *****************************************************************************
 void VextON(void);
 void VextOFF(void);
+void Vhx711ON(void);
+void Vhx711OFF(void);
 void set_color(mycolor_t cc, uint8_t bright, uint16_t ontimems);
 static void prepareTxFrame(uint8_t port);
 uint16_t readBatLevel(void);
@@ -231,7 +234,7 @@ void downLinkDataHandle(McpsIndication_t* mcpsIndication);
 void scale_init(void);
 int16_t get_weight_g(void);
 long hx711_read_ave(void);
-int8_t get_weight_g_vbat_corrected(void);
+uint8_t get_weight_vbat_corrected(void);
 bool fram_write(uint16_t adr, int16_t data);
 void fram_dump(void);
 void fram_test(void);
@@ -256,7 +259,7 @@ void setup()
     // ------------------------------ wake up by GPIO ---------------------------
     pinMode(INT_GPIO, INPUT);
     attachInterrupt(INT_GPIO, onWakeUp, FALLING);
-
+    scale_init();
     if (hx711_data.offset_adc == 0) {
         scale_init();
     }
@@ -286,7 +289,7 @@ void setup()
     //    while (1) {
     vbat_mv = readBatLevel();
     set_color(VIOLET, 50, 125);
-    get_weight_g_vbat_corrected();
+    get_weight_vbat_corrected();
     tempint = get_temperature(addr_int);
     tempext = get_temperature(addr_ext);
 
@@ -316,7 +319,8 @@ void setup()
     Serial.printf("%0.1f\t%d\n", hx711_data.poids_float, hx711_data.poids_int);
     Serial.flush();
     VextOFF();
-    //        delay(2500);
+    Vhx711OFF();
+    //        delay(3000);
     //    }
 
     // ------------------------------ set LoRaWAN -------------------------------
@@ -372,7 +376,7 @@ void loop()
         }
 
         vbat_mv = readBatLevel();
-        get_weight_g_vbat_corrected();
+        get_weight_vbat_corrected();
         tempint = get_temperature(addr_int);
         tempext = get_temperature(addr_ext);
         if (hx711_data.offset_adc == 0) {
@@ -384,8 +388,10 @@ void loop()
         Serial.print(time_sec_cycle);
         Serial.print("\tFault:\t");
         Serial.print(global_fault, HEX);
-        Serial.print("\thx711:\t");
-        Serial.print(poids);
+        Serial.print("\thx711 g float:\t");
+        Serial.print(hx711_data.poids_float, 1);
+        Serial.print("\tg Int:\t");
+        Serial.print(hx711_data.poids_int);
         Serial.print("\tTempInt:\t");
         Serial.print(tempint);
         Serial.print("\tTempExt:\t");
@@ -454,6 +460,18 @@ void VextOFF(void)
     digitalWrite(VEXT_PIN, HIGH);
 }
 
+void Vhx711ON(void)
+{
+    pinMode(VEXT1_PIN, OUTPUT);
+    digitalWrite(VEXT1_PIN, LOW);
+    delay(10);
+}
+
+void Vhx711OFF(void)
+{
+    pinMode(VEXT1_PIN, OUTPUT);
+    digitalWrite(VEXT1_PIN, HIGH);
+}
 void set_color(mycolor_t cc, uint8_t bright, uint16_t ontimems)
 {
     uint8_t i = 255;
@@ -1002,8 +1020,7 @@ void scale_init(void)
     hx711_data.offset_tempext = get_temperature(addr_ext);
     VextOFF();
     delay(10);
-    pinMode(VEXT1_PIN, OUTPUT);
-    digitalWrite(VEXT1_PIN, LOW);
+    Vhx711ON();
     delay(200);
     scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
 
@@ -1041,8 +1058,7 @@ void scale_init(void)
     scale.set_scale(hx711_data.scale); //=(ave 75 measures sans offset)/2000 grammes
 
     scale.power_down();
-    pinMode(VEXT1_PIN, OUTPUT);
-    digitalWrite(VEXT1_PIN, HIGH);
+    Vhx711OFF();
     hx711_data.fault = global_fault;
     hx711_data.poids_float = 0.0;
     hx711_data.poids_int = 0;
@@ -1052,8 +1068,7 @@ int16_t get_weight_g(void)
 {
     VextOFF();
     delay(10);
-    pinMode(VEXT1_PIN, OUTPUT);
-    digitalWrite(VEXT1_PIN, LOW);
+    Vhx711ON();
     global_fault = global_fault & 0b11111101;
     delay(200);
     scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
@@ -1074,17 +1089,15 @@ int16_t get_weight_g(void)
     }
 
     scale.power_down();
-    pinMode(VEXT1_PIN, OUTPUT);
-    digitalWrite(VEXT1_PIN, HIGH);
+    Vhx711OFF();
     return round_float(units10);
 }
 
-int8_t get_weight_g_vbat_corrected(void)
+uint8_t get_weight_vbat_corrected(void)
 {
     VextOFF();
     delay(1);
-    pinMode(VEXT1_PIN, OUTPUT);
-    digitalWrite(VEXT1_PIN, LOW);
+    Vhx711ON();
     global_fault = global_fault & 0b11111101; // clear hx711 fault
     delay(200);
     scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
@@ -1104,9 +1117,8 @@ int8_t get_weight_g_vbat_corrected(void)
     }
 
     scale.power_down();
-    pinMode(VEXT1_PIN, OUTPUT);
-    digitalWrite(VEXT1_PIN, HIGH);
 
+    Vhx711OFF();
     delta_vbat = hx711_data.offset_vbat - vbat_mv;
     hx711_data.poids_int = round_float((((double)hx711_data.adc + ((DELTAADC / DELTAMV) * (double)delta_vbat)) - (double)hx711_data.offset_adc) / hx711_data.scale);
     hx711_data.poids_float = roundf(((((double)hx711_data.adc + ((DELTAADC / DELTAMV) * (double)delta_vbat)) - (double)hx711_data.offset_adc) / hx711_data.scale) * 10.000) / 10.000;
@@ -1118,8 +1130,7 @@ long hx711_read_ave(void)
 {
     VextOFF();
     delay(10);
-    pinMode(VEXT1_PIN, OUTPUT);
-    digitalWrite(VEXT1_PIN, LOW);
+    Vhx711ON();
     delay(200);
     scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
     hx711_data.adc = 0;
@@ -1130,8 +1141,7 @@ long hx711_read_ave(void)
         hx711_data.adc = scale.read_average(25);
     }
     scale.power_down();
-    pinMode(VEXT1_PIN, OUTPUT);
-    digitalWrite(VEXT1_PIN, HIGH);
+    Vhx711OFF();
     return hx711_data.adc;
 }
 
