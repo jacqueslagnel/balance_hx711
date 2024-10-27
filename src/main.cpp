@@ -50,6 +50,7 @@ typedef enum mycolor {
  * RGB green means received done;
  */
 
+/*
 // OTAA  chip id and ssl key OK
 // hh=$(openssl rand -hex 8);echo $hh;echo $hh|sed 's/\(..\)/0x\1, /g'
 // 984505854ed83839
@@ -58,11 +59,12 @@ uint8_t appEui[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 // hh=$(openssl rand -hex 16);echo $hh;echo $hh|sed 's/\(..\)/0x\1, /g'
 // 2b4178609b1a32a88c5271ab05eb9980
 uint8_t appKey[] = { 0x2b, 0x41, 0x78, 0x60, 0x9b, 0x1a, 0x32, 0xa8, 0x8c, 0x52, 0x71, 0xab, 0x05, 0xeb, 0x99, 0x80 };
+*/
 
 // OTAA : maison joining ok but where? But no TTN
-// uint8_t devEui[] = { 0x22, 0x32, 0x33, 0x00, 0x00, 0x88, 0x88, 0x02 }; // ori 0x02
-// uint8_t appEui[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-// uint8_t appKey[] = { 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x66, 0x01 };
+uint8_t devEui[] = { 0x22, 0x32, 0x33, 0x00, 0x00, 0x88, 0x88, 0x02 }; // ori 0x02
+uint8_t appEui[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t appKey[] = { 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x66, 0x01 };
 
 /* ABP para*/
 uint8_t nwkSKey[] = { 0x15, 0xb1, 0xd0, 0xef, 0xa4, 0x63, 0xdf, 0xbe, 0x3d, 0x11, 0x18, 0x1e, 0x1e, 0xc7, 0xda, 0x85 };
@@ -254,6 +256,11 @@ void setup()
     // ------------------------------ wake up by GPIO ---------------------------
     pinMode(INT_GPIO, INPUT);
     attachInterrupt(INT_GPIO, onWakeUp, FALLING);
+
+    if (hx711_data.offset_adc == 0) {
+        scale_init();
+    }
+
     /*
         while (1) {
             set_color(VIOLET, 50, 125);
@@ -275,43 +282,42 @@ void setup()
         }
     */
     // ---------------- test sensors --------------------------------------------
-    if (hx711_data.offset_adc == 0) {
-        scale_init();
-    }
-    while (1) {
-        vbat_mv = readBatLevel();
-        set_color(VIOLET, 50, 125);
-        get_weight_g_vbat_corrected();
-        tempint = get_temperature(addr_int);
-        tempext = get_temperature(addr_ext);
 
-        Serial.print("ADC-offset:\t");
-        Serial.print(hx711_data.offset_adc);
-        Serial.print("\tVbat-offset:\t");
-        Serial.print(hx711_data.offset_vbat);
-        Serial.print("\tTempint-offset:\t");
-        Serial.print(hx711_data.offset_tempint);
-        Serial.print("\tTempExt-offset:\t");
-        Serial.print(hx711_data.offset_tempext);
+    //    while (1) {
+    vbat_mv = readBatLevel();
+    set_color(VIOLET, 50, 125);
+    get_weight_g_vbat_corrected();
+    tempint = get_temperature(addr_int);
+    tempext = get_temperature(addr_ext);
 
-        Serial.print("\tTempInt:\t");
-        Serial.print(tempint);
-        Serial.print("\tTempExt:\t");
-        Serial.println(tempext);
+    Serial.print("ADC-offset:\t");
+    Serial.print(hx711_data.offset_adc);
+    Serial.print("\tVbat-offset:\t");
+    Serial.print(hx711_data.offset_vbat);
+    Serial.print("\tTempint-offset:\t");
+    Serial.print(hx711_data.offset_tempint);
+    Serial.print("\tTempExt-offset:\t");
+    Serial.print(hx711_data.offset_tempext);
 
-        Serial.print("\tVbat:\t");
-        Serial.print(vbat_mv);
+    Serial.print("\tTempInt:\t");
+    Serial.print(tempint);
+    Serial.print("\tTempExt:\t");
+    Serial.println(tempext);
 
-        Serial.print("\tpoids ori:\t");
-        poids = round_float(((double)(hx711_data.adc - hx711_data.offset_adc) / hx711_data.scale));
-        units10 = roundf(((double)(hx711_data.adc - hx711_data.offset_adc) / hx711_data.scale) * 10.000) / 10.000;
-        Serial.printf("%0.1f\t%d", units10, poids);
+    Serial.print("\tVbat:\t");
+    Serial.print(vbat_mv);
 
-        Serial.print("\tpoids cor:\t");
-        Serial.printf("%0.1f\t%d\n", hx711_data.poids_float, hx711_data.poids_int);
+    Serial.print("\tpoids ori:\t");
+    poids = round_float(((double)(hx711_data.adc - hx711_data.offset_adc) / hx711_data.scale));
+    units10 = roundf(((double)(hx711_data.adc - hx711_data.offset_adc) / hx711_data.scale) * 10.000) / 10.000;
+    Serial.printf("%0.1f\t%d", units10, poids);
 
-        delay(2500);
-    }
+    Serial.print("\tpoids cor:\t");
+    Serial.printf("%0.1f\t%d\n", hx711_data.poids_float, hx711_data.poids_int);
+    Serial.flush();
+    VextOFF();
+    //        delay(2500);
+    //    }
 
     // ------------------------------ set LoRaWAN -------------------------------
     deviceState = DEVICE_STATE_INIT;
