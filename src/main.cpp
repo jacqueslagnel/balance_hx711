@@ -230,7 +230,6 @@ void scale_init(void);
 int16_t get_weight_g(void);
 long hx711_read_ave(void);
 int8_t get_weight_g_vbat_corrected(void);
-
 bool fram_write(uint16_t adr, int16_t data);
 void fram_dump(void);
 void fram_test(void);
@@ -276,7 +275,9 @@ void setup()
         }
     */
     // ---------------- test sensors --------------------------------------------
-
+    if (hx711_data.offset_adc == 0) {
+        scale_init();
+    }
     while (1) {
         vbat_mv = readBatLevel();
         set_color(VIOLET, 50, 125);
@@ -293,7 +294,7 @@ void setup()
         Serial.print("\tTempExt-offset:\t");
         Serial.print(hx711_data.offset_tempext);
 
-        Serial.print("TempInt:\t");
+        Serial.print("\tTempInt:\t");
         Serial.print(tempint);
         Serial.print("\tTempExt:\t");
         Serial.println(tempext);
@@ -718,11 +719,13 @@ int8_t get_temperature(byte addr[8])
     type_s = 0; // DS18B20
     ds18b20.reset();
     ds18b20.select(addr);
-    Serial.print("Addr: ");
-    for (i = 0; i < 8; i++) { // we need 9 bytes
-        Serial.print(addr[i], HEX);
-        Serial.print(" ");
-    }
+    /*
+     Serial.print("Addr: ");
+     for (i = 0; i < 8; i++) { // we need 9 bytes
+         Serial.print(addr[i], HEX);
+         Serial.print(" ");
+     }
+     */
     // Serial.println(" ");
     ds18b20.write(0x4E);
     ds18b20.write_bytes(dsRes, 3, 1); // set resolution bit
@@ -736,28 +739,30 @@ int8_t get_temperature(byte addr[8])
         busStatus = ds18b20.read(); // keep reading until conversion is done
     } while (busStatus != 0xFF && (millis() - prMillis) < 900); // busStatus = 0xFF means conversion done
     //---------------------------
+    /*
     Serial.print("\tTime: ");
     Serial.print(millis() - prMillis);
     Serial.print(" ms");
-
+*/
     // delay(250); // 1000mS, maybe 750ms is enough, maybe not
     // we might do a ds.depower() here, but the reset will take care of it.
     present = ds18b20.reset();
     ds18b20.select(addr);
     ds18b20.write(0xBE); // Read Scratchpad
-
-    Serial.print("\tData = ");
-    Serial.print(present, HEX);
-    Serial.print(" ");
+    /*
+        Serial.print("\tData = ");
+        Serial.print(present, HEX);
+        Serial.print(" ");
+        */
     for (i = 0; i < 9; i++) { // we need 9 bytes
         data[i] = ds18b20.read();
-        Serial.print(data[i], HEX);
-        Serial.print(" ");
+        //  Serial.print(data[i], HEX);
+        // Serial.print(" ");
     }
     ds18b20.depower();
-    Serial.print(" CRC=");
-    Serial.print(OneWire::crc8(data, 8), HEX);
-    // Serial.println();
+    // Serial.print(" CRC=");
+    // Serial.print(OneWire::crc8(data, 8), HEX);
+    //  Serial.println();
 
     // Convert the data to actual temperature
     // because the result is a 16 bit signed integer, it should
@@ -782,8 +787,8 @@ int8_t get_temperature(byte addr[8])
         //// default is 12 bit resolution, 750 ms conversion time
     }
     tp = (float)raw / 16.0;
-    Serial.print("\tTemperature = ");
-    Serial.println(tp);
+    // Serial.print("\tTemperature = ");
+    // Serial.println(tp);
 
     // pinMode(ONE_WIRE_BUS, OUTPUT);
     VextOFF();
