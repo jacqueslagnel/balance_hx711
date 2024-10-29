@@ -29,9 +29,10 @@
 
 #define INT_GPIO GPIO11
 
+// *****************************************************************************
+// ********************* neopixel colors ***************************************
+// *****************************************************************************
 CubeCell_NeoPixel mypixels(1, NEOPIXEL_DIN_PIN, NEO_GRB + NEO_KHZ800);
-
-// ********************* neopixel colors ****************************
 typedef enum mycolor {
     RED,
     GREEN,
@@ -40,7 +41,10 @@ typedef enum mycolor {
     VIOLET,
 } mycolor_t;
 
-// ************************** LoRaWAN *********************************
+// *****************************************************************************
+// ************************** LoRaWAN ******************************************
+// *****************************************************************************
+
 /*
  * set LoraWan_RGB to Active,the RGB active in loraWan
  * RGB red means sending;
@@ -120,7 +124,10 @@ uint8_t appPort = 2;
  */
 uint8_t confirmedNbTrials = 4;
 
-// ********************** 1 wire *************************************
+// *****************************************************************************
+// ********************** 1 wire ***********************************************
+// *****************************************************************************
+
 // Data wire is plugged into port 4 on the Arduino
 // UART_TX2 P4_5
 
@@ -137,10 +144,9 @@ byte addr_ext[8] = { 0x28, 0x4B, 0x62, 0xA5, 0x0C, 0x00, 0x00, 0x92 };
 OneWire ds18b20(ONE_WIRE_BUS); // on pin GPIO1 PIN 6 (a 4.7K resistor is necessary)
 // OneWire ds18b20_ext(ONE_WIRE_BUS_EXT); // on digital pin 2
 
-// ********************** Vbat **************************************
-uint16_t vbat_mv = 0;
-
-// ************************* hx711 ***********************************
+// *****************************************************************************
+// ************************* hx711 *********************************************
+// *****************************************************************************
 // HX711 circuit wiring
 const int LOADCELL_DOUT_PIN = GPIO9; // blue data
 const int LOADCELL_SCK_PIN = GPIO8; // violet clk
@@ -172,7 +178,9 @@ struct hx711_data_t {
 };
 hx711_data_t hx711_data = { 0, 0, -127, -127, 0.0, 0, 0, 0, 112.867886670f };
 
+// *****************************************************************************
 // **************************** FRAM **********************************
+// *****************************************************************************
 /* Example code for the Adafruit I2C EEPROM/FRAM breakout */
 /* Connect SCL    to SCL
    Connect SDA    to SDA
@@ -186,28 +194,30 @@ FRAM fram;
 #define EEPROM_ADDR 0X50
 // b1010000 (0x50) the default address with A0=A1=A2=0
 
+// *****************************************************************************
 // ******************** global vars ***********************************
+// *****************************************************************************
 boolean isallreadyjoined = false;
 TimerSysTime_t sysTimeCurrent;
 uint8_t global_fault = 0;
 boolean send_parameters = true;
-/*
-  // reset timer
-  sysTimeCurrent.Seconds=0;
-  sysTimeCurrent.SubSeconds=0;
-  TimerSetSysTime(sysTimeCurrent);
-  */
-
+boolean setzero = false;
 // if true, next uplink will add MOTE_MAC_DEVICE_TIME_REQ
 bool timeReq = false;
+uint16_t vbat_mv = 0;
+// reset timer
+//  sysTimeCurrent.Seconds=0;
+//  sysTimeCurrent.SubSeconds=0;
+//  TimerSetSysTime(sysTimeCurrent);
+
+// *****************************************************************************
+// ******************** functions declaration **********************************
+// *****************************************************************************
 void dev_time_updated()
 {
     Serial.println("Once device time updated, this function run\r\n");
 }
 
-// *****************************************************************************
-// ******************** functions declaration **********************************
-// *****************************************************************************
 void VextON(void);
 void VextOFF(void);
 void Vhx711ON(void);
@@ -314,7 +324,8 @@ void setup()
     }
 #endif
     // ------------------------------ set LoRaWAN -------------------------------
-    send_parameters = true;
+    send_parameters = true; // we send the parameters on port 3
+    setzero = false; // we already init the hx711
     deviceState = DEVICE_STATE_INIT;
     LoRaWAN.ifskipjoin();
 }
@@ -366,35 +377,44 @@ void loop()
             set_color(BLUE, 50, 125);
         }
 
-        vbat_mv = readBatLevel();
-        get_weight_vbat_corrected();
-        tempint = get_temperature(addr_int);
-        tempext = get_temperature(addr_ext);
-        if (hx711_data.offset_adc == 0) {
+        if (hx711_data.offset_adc == 0 || setzero == true) {
             scale_init();
+            send_parameters = true;
+            setzero = false;
         }
 
+        if (send_parameters == true) {
+            appPort = 3;
+            prepareTxFrame(appPort);
+            send_parameters = false;
+        } else {
+            vbat_mv = readBatLevel();
+            get_weight_vbat_corrected();
+            tempint = get_temperature(addr_int);
+            tempext = get_temperature(addr_ext);
 #ifdef DEBUGPRINT
-        Serial.print("Timout:\t");
-        Serial.print(time_sec_cycle);
-        Serial.print("\tFault:\t");
-        Serial.print(global_fault, HEX);
-        Serial.print("\thx711 g float:\t");
-        Serial.print(hx711_data.poids_float, 1);
-        Serial.print("\tg Int:\t");
-        Serial.print(hx711_data.poids_int);
-        Serial.print("\tTempInt:\t");
-        Serial.print(tempint);
-        Serial.print("\tTempExt:\t");
-        Serial.print(tempext);
-        Serial.print("\tVbat:\t");
-        Serial.println(vbat_mv);
-        // Serial.printf("Timeout\t%d,%02X,%d,%d,%0.3f\n",time_sec_cycle,global_fault,poids,tempint,(float)vbat_mv/1000.000);
-        Serial.flush();
+            Serial.print("Timout:\t");
+            Serial.print(time_sec_cycle);
+            Serial.print("\tFault:\t");
+            Serial.print(global_fault, HEX);
+            Serial.print("\thx711 g float:\t");
+            Serial.print(hx711_data.poids_float, 1);
+            Serial.print("\tg Int:\t");
+            Serial.print(hx711_data.poids_int);
+            Serial.print("\tTempInt:\t");
+            Serial.print(tempint);
+            Serial.print("\tTempExt:\t");
+            Serial.print(tempext);
+            Serial.print("\tVbat:\t");
+            Serial.println(vbat_mv);
+            // Serial.printf("Timeout\t%d,%02X,%d,%d,%0.3f\n",time_sec_cycle,global_fault,poids,tempint,(float)vbat_mv/1000.000);
+            Serial.flush();
 #endif
-        prepareTxFrame(appPort);
-        LoRaWAN.send();
+            appPort = 2;
+            prepareTxFrame(appPort);
+        }
 
+        LoRaWAN.send();
         deviceState = DEVICE_STATE_CYCLE;
         // TODO: uncomment the 2 lines:
         pinMode(INT_GPIO, INPUT);
@@ -532,34 +552,52 @@ int16_t round_float(float mm)
 /* Prepares the payload of the frame */
 static void prepareTxFrame(uint8_t port)
 {
-    appDataSize = 7;
-    // code retruned fault
-    appData[0] = global_fault; // fault; 0
-    // code the integer 16 poids
-    appData[1] = (uint8_t)((hx711_data.poids_int) >> 8); // 1
-    appData[2] = (uint8_t)((hx711_data.poids_int) & 0xFF); // 2
-    // code vBat
-    appData[3] = (uint8_t)((vbat_mv) >> 8); // 3
-    appData[4] = (uint8_t)((vbat_mv) & 0xFF); // 4
-    // code Temp ds18b20
-    appData[5] = tempint; // 5
-    appData[6] = tempext; // 6
-    appData[7] = '\0';
+    if (port == 3) {
+        appDataSize = 8;
+        // ADC offset
+        appData[0] = (hx711_data.offset_adc >> 24) & 0xFF;
+        appData[1] = (hx711_data.offset_adc >> 16) & 0xFF;
+        appData[2] = (hx711_data.offset_adc >> 8) & 0xFF;
+        appData[3] = hx711_data.offset_adc & 0xFF;
+        appData[4] = (uint8_t)((hx711_data.offset_vbat) >> 8); // 5
+        appData[5] = (uint8_t)((hx711_data.offset_vbat) & 0xFF); // 6
+        appData[6] = hx711_data.offset_tempint; // 7
+        appData[7] = hx711_data.offset_tempext; // 8
+        appData[8] = '\0';
+    } else if (port == 2) {
+        appDataSize = 7;
+        // code retruned fault
+        appData[0] = global_fault; // fault; 0
+        // code the integer 16 poids
+        appData[1] = (uint8_t)((hx711_data.poids_int) >> 8); // 1
+        appData[2] = (uint8_t)((hx711_data.poids_int) & 0xFF); // 2
+        // code vBat
+        appData[3] = (uint8_t)((vbat_mv) >> 8); // 3
+        appData[4] = (uint8_t)((vbat_mv) & 0xFF); // 4
+        // code Temp ds18b20
+        appData[5] = tempint; // 5
+        appData[6] = tempext; // 6
+        appData[7] = '\0';
+    } else {
+        appDataSize = 0;
+        appData[0] = '\0';
+    }
 }
 
 uint16_t readBatLevel(void)
 {
+    uint16_t voltage = 0;
     VextOFF();
     detachInterrupt(INT_GPIO);
     pinMode(VEXT_VBAT_PIN, OUTPUT);
     digitalWrite(VEXT_VBAT_PIN, LOW);
-    delay(25);
+    delay(50);
 
-    uint16_t voltage = getBatteryVoltage();
+    voltage = getBatteryVoltage();
+    voltage = getBatteryVoltage();
     float vf = (float)voltage * 1.634;
     voltage = (uint16_t)round_float(vf);
     digitalWrite(VEXT_VBAT_PIN, HIGH);
-    // pinMode(VBAT_ADC_CTL, INPUT);
     pinMode(INT_GPIO, INPUT);
     attachInterrupt(INT_GPIO, onWakeUp, FALLING);
     delay(1);
@@ -1112,8 +1150,12 @@ uint8_t get_weight_vbat_corrected(void)
 
     Vhx711OFF();
     delta_vbat = hx711_data.offset_vbat - vbat_mv;
-    hx711_data.poids_int = round_float((((double)hx711_data.adc + ((DELTAADC / DELTAMV) * (double)delta_vbat)) - (double)hx711_data.offset_adc) / hx711_data.scale);
-    hx711_data.poids_float = roundf(((((double)hx711_data.adc + ((DELTAADC / DELTAMV) * (double)delta_vbat)) - (double)hx711_data.offset_adc) / hx711_data.scale) * 10.000) / 10.000;
+    float poidsf = (((double)hx711_data.adc + ((DELTAADC / DELTAMV) * (double)delta_vbat)) - (double)hx711_data.offset_adc) / hx711_data.scale;
+    hx711_data.poids_float = roundf(poidsf * 10.000) / 10.000;
+    if (abs(poidsf) > 32760.0) {
+        poidsf = 31765.0;
+    }
+    hx711_data.poids_int = round_float(poidsf);
     // return hx711_adc;
     return global_fault;
 }
