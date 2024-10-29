@@ -203,7 +203,7 @@ uint8_t global_fault = 0;
 
 // ************************** if debug we use print ********************
 #define DEBUGPRINT 1
-#define TESTING 1
+//#define TESTING 1
 //  *********************************************************************
 
 // if true, next uplink will add MOTE_MAC_DEVICE_TIME_REQ
@@ -264,37 +264,19 @@ void setup()
     if (hx711_data.offset_adc == 0) {
         scale_init();
     }
-
-    /*
-        while (1) {
-            set_color(VIOLET, 50, 125);
-            OneWireScan();
-            tempint = get_temperature(addr_int);
-            tempext = get_temperature(addr_ext);
-
-            Serial.print("TempInt:\t");
-            Serial.print(tempint);
-            Serial.print("\tTempExt:\t");
-            Serial.println(tempext);
-            delay(2500);
-        }
-
-        Serial.println("Setup hx711");
-        if (hx711_data.offset_adc == 0 || hx711_data.offset_tempint == -127 | hx711_data.offset_vbat < 1) {
-            scale_init();
-            vbat_mv = hx711_data.offset_vbat;
-        }
-    */
+    Serial.print("global_fault:\t");
+    Serial.println(global_fault);
     // ---------------- test sensors --------------------------------------------
 
 #ifdef TESTING
     while (1) {
 #endif
-        vbat_mv = readBatLevel();
+        global_fault = 0;
         set_color(VIOLET, 50, 125);
+        vbat_mv = readBatLevel();
         get_weight_vbat_corrected();
-        tempint = get_temperature(addr_int);
         tempext = get_temperature(addr_ext);
+        tempint = get_temperature(addr_int);
 
         Serial.print("ADC-offset:\t");
         Serial.print(hx711_data.offset_adc);
@@ -318,13 +300,13 @@ void setup()
         units10 = roundf(((double)(hx711_data.adc - hx711_data.offset_adc) / hx711_data.scale) * 10.000) / 10.000;
         Serial.printf("%0.1f\t%d", units10, poids);
         Serial.print("\tpoids cor:\t");
-        Serial.printf("%0.1f\t%d\n", hx711_data.poids_float, hx711_data.poids_int);
+        Serial.printf("%0.1f\t%d\terrors: %d\n", hx711_data.poids_float, hx711_data.poids_int, global_fault);
 
         Serial.flush();
         VextOFF();
         Vhx711OFF();
 #ifdef TESTING
-        delay(3000);
+        delay(5000);
     }
 #endif
     // ------------------------------ set LoRaWAN -------------------------------
