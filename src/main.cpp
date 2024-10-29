@@ -120,10 +120,6 @@ uint8_t appPort = 2;
  */
 uint8_t confirmedNbTrials = 4;
 
-// ************************** timout ********************************
-volatile uint16_t time_sec_cycle = 5 * 60; // seconds
-// ************************************************************************************
-
 // ********************** 1 wire *************************************
 // Data wire is plugged into port 4 on the Arduino
 // UART_TX2 P4_5
@@ -194,17 +190,13 @@ FRAM fram;
 boolean isallreadyjoined = false;
 TimerSysTime_t sysTimeCurrent;
 uint8_t global_fault = 0;
+boolean send_parameters = true;
 /*
   // reset timer
   sysTimeCurrent.Seconds=0;
   sysTimeCurrent.SubSeconds=0;
   TimerSetSysTime(sysTimeCurrent);
   */
-
-// ************************** if debug we use print ********************
-#define DEBUGPRINT 1
-//#define TESTING 1
-//  *********************************************************************
 
 // if true, next uplink will add MOTE_MAC_DEVICE_TIME_REQ
 bool timeReq = false;
@@ -243,6 +235,16 @@ void fram_test(void);
 // *****************************************************************************
 // ********************* SETUP *************************************************
 // *****************************************************************************
+
+// ************************** timout ********************************
+volatile uint16_t time_sec_cycle = 5 * 60; // seconds
+// ************************************************************************************
+
+// ************************** if debug we use print ********************
+#define DEBUGPRINT 1
+// #define TESTING 1
+//   *********************************************************************
+
 void setup()
 {
     Serial.begin(115200);
@@ -295,6 +297,8 @@ void setup()
         Serial.print("\tVbat:\t");
         Serial.print(vbat_mv);
 
+        Serial.print("\tADC:\t");
+        Serial.print(hx711_data.adc);
         Serial.print("\tpoids ori:\t");
         poids = round_float(((double)(hx711_data.adc - hx711_data.offset_adc) / hx711_data.scale));
         units10 = roundf(((double)(hx711_data.adc - hx711_data.offset_adc) / hx711_data.scale) * 10.000) / 10.000;
@@ -310,6 +314,7 @@ void setup()
     }
 #endif
     // ------------------------------ set LoRaWAN -------------------------------
+    send_parameters = true;
     deviceState = DEVICE_STATE_INIT;
     LoRaWAN.ifskipjoin();
 }
@@ -389,6 +394,7 @@ void loop()
 #endif
         prepareTxFrame(appPort);
         LoRaWAN.send();
+
         deviceState = DEVICE_STATE_CYCLE;
         // TODO: uncomment the 2 lines:
         pinMode(INT_GPIO, INPUT);
