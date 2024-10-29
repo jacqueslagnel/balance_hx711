@@ -552,7 +552,7 @@ int16_t round_float(float mm)
 /* Prepares the payload of the frame */
 static void prepareTxFrame(uint8_t port)
 {
-    if (port == 3) {
+    if (port == 3) { // send the parameters on port 3
         appDataSize = 8;
         // ADC offset
         appData[0] = (hx711_data.offset_adc >> 24) & 0xFF;
@@ -564,7 +564,7 @@ static void prepareTxFrame(uint8_t port)
         appData[6] = hx711_data.offset_tempint; // 7
         appData[7] = hx711_data.offset_tempext; // 8
         appData[8] = '\0';
-    } else if (port == 2) {
+    } else if (port == 2) { // send measures in the loop
         appDataSize = 7;
         // code retruned fault
         appData[0] = global_fault; // fault; 0
