@@ -1,6 +1,6 @@
 #include "CubeCell_NeoPixel.h"
 #include "FRAM.h"
-#include "FRAM_MULTILANGUAGE.h"
+//#include "FRAM_MULTILANGUAGE.h"
 #include <Arduino.h>
 #include <EEPROM.h>
 #include <HX711.h>
@@ -1270,6 +1270,7 @@ bool fram_write(uint16_t adr, int16_t data)
     VextON();
     delay(5);
     if (fram.begin(EEPROM_ADDR)) { // you can stick the new i2c addr in here, e.g. begin(0x51);
+    //fram.writeObject(0,hx711_data);
         fram.write16(adr, data);
         if (data == fram.read16(adr)) {
             vr = true;
