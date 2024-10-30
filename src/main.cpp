@@ -205,6 +205,9 @@ boolean setzero = false;
 // if true, next uplink will add MOTE_MAC_DEVICE_TIME_REQ
 bool timeReq = false;
 uint16_t vbat_mv = 0;
+int8_t action = 0;
+float poidsf = 0.0;
+
 // reset timer
 //  sysTimeCurrent.Seconds=0;
 //  sysTimeCurrent.SubSeconds=0;
@@ -251,7 +254,7 @@ volatile uint16_t time_sec_cycle = 5 * 60; // seconds
 // ************************************************************************************
 
 // ************************** if debug we use print ********************
-#define DEBUGPRINT 1
+// #define DEBUGPRINT 1
 // #define TESTING 1
 //   *********************************************************************
 
@@ -276,8 +279,7 @@ void setup()
     if (hx711_data.offset_adc == 0) {
         scale_init();
     }
-    Serial.print("global_fault:\t");
-    Serial.println(global_fault);
+
     // ---------------- test sensors --------------------------------------------
 
 #ifdef TESTING
@@ -287,10 +289,25 @@ void setup()
         set_color(VIOLET, 50, 125);
         vbat_mv = readBatLevel();
         get_weight_vbat_corrected();
-        tempext = get_temperature(addr_ext);
-        tempint = get_temperature(addr_int);
 
-        Serial.print("ADC-offset:\t");
+        tempint = get_temperature(addr_int);
+        tempext = get_temperature(addr_ext);
+        byte yy = 0;
+        while (tempint < -120 && yy < 3) {
+            tempint = get_temperature(addr_int);
+            yy++;
+            delay(100);
+        }
+        yy = 0;
+        while (tempext < -120 && yy < 3) {
+            tempext = get_temperature(addr_ext);
+            yy++;
+            delay(100);
+        }
+#ifdef DEBUGPRINT
+        Serial.print("global_fault:\t");
+        Serial.print(global_fault);
+        Serial.print("\tADC-offset:\t");
         Serial.print(hx711_data.offset_adc);
         Serial.print("\tVbat-offset:\t");
         Serial.print(hx711_data.offset_vbat);
@@ -315,7 +332,7 @@ void setup()
         Serial.printf("%0.1f\t%d", units10, poids);
         Serial.print("\tpoids cor:\t");
         Serial.printf("%0.1f\t%d\terrors: %d\n", hx711_data.poids_float, hx711_data.poids_int, global_fault);
-
+#endif
         Serial.flush();
         VextOFF();
         Vhx711OFF();
@@ -390,8 +407,21 @@ void loop()
         } else {
             vbat_mv = readBatLevel();
             get_weight_vbat_corrected();
+            byte yy = 0;
             tempint = get_temperature(addr_int);
             tempext = get_temperature(addr_ext);
+            while (tempint < -120 && yy < 3) {
+                tempint = get_temperature(addr_int);
+                yy++;
+                delay(100);
+            }
+            yy = 0;
+            while (tempext < -120 && yy < 3) {
+                tempext = get_temperature(addr_ext);
+                yy++;
+                delay(100);
+            }
+
 #ifdef DEBUGPRINT
             Serial.print("Timout:\t");
             Serial.print(time_sec_cycle);
@@ -433,9 +463,7 @@ void loop()
         digitalWrite(VEXT_PIN, HIGH);
         digitalWrite(VEXT1_PIN, HIGH);
         digitalWrite(VEXT_VBAT_PIN, HIGH);
-        // pinMode(ONE_WIRE_BUS, OUTPUT);
-        // digitalWrite(ONE_WIRE_BUS, HIGH);
-        // pinMode(ONE_WIRE_BUS, INPUT);
+
         // Schedule next packet transmission
         appTxDutyCycle = (uint32_t)(time_sec_cycle) * 1000;
         txDutyCycleTime = appTxDutyCycle + randr(0, APP_TX_DUTYCYCLE_RND);
@@ -445,7 +473,6 @@ void loop()
     }
     case DEVICE_STATE_SLEEP: {
         LoRaWAN.sleep();
-        // Serial.begin(115200);
         break;
     }
     default: {
@@ -559,25 +586,29 @@ static void prepareTxFrame(uint8_t port)
         appData[1] = (hx711_data.offset_adc >> 16) & 0xFF;
         appData[2] = (hx711_data.offset_adc >> 8) & 0xFF;
         appData[3] = hx711_data.offset_adc & 0xFF;
-        appData[4] = (uint8_t)((hx711_data.offset_vbat) >> 8); // 5
-        appData[5] = (uint8_t)((hx711_data.offset_vbat) & 0xFF); // 6
+        appData[4] = ((hx711_data.offset_vbat) >> 8); // 5
+        appData[5] = ((hx711_data.offset_vbat) & 0xFF); // 6
         appData[6] = hx711_data.offset_tempint; // 7
         appData[7] = hx711_data.offset_tempext; // 8
         appData[8] = '\0';
     } else if (port == 2) { // send measures in the loop
-        appDataSize = 7;
+        appDataSize = 11;
         // code retruned fault
         appData[0] = global_fault; // fault; 0
+        appData[1] = (hx711_data.adc >> 24) & 0xFF;
+        appData[2] = (hx711_data.adc >> 16) & 0xFF;
+        appData[3] = (hx711_data.adc >> 8) & 0xFF;
+        appData[4] = hx711_data.adc & 0xFF;
         // code the integer 16 poids
-        appData[1] = (uint8_t)((hx711_data.poids_int) >> 8); // 1
-        appData[2] = (uint8_t)((hx711_data.poids_int) & 0xFF); // 2
+        appData[5] = ((hx711_data.poids_int) >> 8); // 1
+        appData[6] = ((hx711_data.poids_int) & 0xFF); // 2
         // code vBat
-        appData[3] = (uint8_t)((vbat_mv) >> 8); // 3
-        appData[4] = (uint8_t)((vbat_mv) & 0xFF); // 4
+        appData[7] = ((vbat_mv) >> 8); // 3
+        appData[8] = ((vbat_mv) & 0xFF); // 4
         // code Temp ds18b20
-        appData[5] = tempint; // 5
-        appData[6] = tempext; // 6
-        appData[7] = '\0';
+        appData[9] = tempint; // 5
+        appData[10] = tempext; // 6
+        appData[11] = '\0';
     } else {
         appDataSize = 0;
         appData[0] = '\0';
@@ -664,6 +695,7 @@ int8_t OneWireScan(void)
 
     while (ds18b20.search(addr)) {
         nbds++;
+
         Serial.print("ds count: ");
         Serial.print(nbds);
         Serial.print("\tADR: ");
@@ -718,7 +750,7 @@ int8_t OneWireScan(void)
 int8_t get_temperature(byte addr[8])
 {
     // https://forum.arduino.cc/t/ds18b20-temperature-sensor-using-onewire-library/699347/10
-    float tp = 0;
+    float tp = -127;
     byte i;
     byte present = 0;
     byte type_s;
@@ -801,6 +833,10 @@ int8_t get_temperature(byte addr[8])
     // delay(250); // 1000mS, maybe 750ms is enough, maybe not
     // we might do a ds.depower() here, but the reset will take care of it.
     present = ds18b20.reset();
+    if (present < 1) {
+        VextOFF();
+        return -127;
+    }
     ds18b20.select(addr);
     ds18b20.write(0xBE); // Read Scratchpad
     /*
@@ -996,8 +1032,10 @@ void downLinkDataHandle(McpsIndication_t* mcpsIndication)
     Serial.flush();
 #endif
 
-    int8_t model = 0;
-    model = mcpsIndication->Buffer[0];
+    action = mcpsIndication->Buffer[0];
+    // 0x03=> setZERO
+    // 0x30 => sent params
+    // no needed: 0x33 => setZERO & sent params
     // EEPROM.write(0, model);
     // EEPROM.commit();
 
@@ -1008,10 +1046,42 @@ void downLinkDataHandle(McpsIndication_t* mcpsIndication)
     } else {
         time_sec_cycle = 300;
     }
+
+    switch (action) {
+    case 0x03: { // zero hx711
+        setzero = true;
+        send_parameters = true;
+        deviceState = DEVICE_STATE_SEND;
+        action = 0;
+        break;
+    }
+    case 0x30: { //  sent params
+        setzero = false;
+        send_parameters = true;
+        deviceState = DEVICE_STATE_SEND;
+        action = 0;
+        break;
+    }
+    case 0xC0: { //  sent data
+        setzero = false;
+        send_parameters = false;
+        deviceState = DEVICE_STATE_SEND;
+        action = 0;
+        break;
+    }
+
+    default: {
+        action = 0;
+        break;
+    }
+    }
+
     set_color(YELLOW, 150, 250);
 
 #ifdef DEBUGPRINT
-    Serial.print("Tx sec:");
+    Serial.print("Action: ");
+    Serial.println(action);
+    Serial.print("\tTx sec: ");
     Serial.println(time_sec_cycle);
     Serial.flush();
     delay(2000);
@@ -1045,7 +1115,8 @@ void myturnOffRGB(void)
 // ------------------ init HX711 ------------------------------
 void scale_init(void)
 {
-    hx711_data.offset_vbat = readBatLevel();
+    byte x = hx711_data.offset_vbat = readBatLevel();
+
     hx711_data.offset_tempint = get_temperature(addr_int);
     hx711_data.offset_tempext = get_temperature(addr_ext);
     VextOFF();
@@ -1057,9 +1128,13 @@ void scale_init(void)
     global_fault = global_fault & 0b11111001;
     if (scale.wait_ready_retry(4, 250)) {
         long mylong = scale.read_average(10);
-        // Serial.println(mylong);
+#ifdef DEBUGPRINT
+        Serial.println(mylong);
+#endif
     } else {
+#ifdef DEBUGPRINT
         Serial.println("NO HX711 1");
+#endif
         global_fault = global_fault | 0b00000010;
     }
 
@@ -1068,16 +1143,22 @@ void scale_init(void)
         if (scale.wait_ready_retry(4, 250)) {
             scale.tare(70);
             hx711_data.offset_adc = scale.get_offset();
+#ifdef DEBUGPRINT
             Serial.print("INIT rtc RAM offset: ");
             Serial.println(hx711_data.offset_adc);
+#endif
         } else {
+#ifdef DEBUGPRINT
             Serial.println("NO HX711 2");
+#endif
             global_fault = global_fault | 0b00000010;
         }
     } else {
         scale.set_offset(hx711_data.offset_adc);
+#ifdef DEBUGPRINT
         Serial.print("rtc RAM offset ok: ");
         Serial.println(hx711_data.offset_adc);
+#endif
     }
 
     // INIT rtc RAM offset: 322587
@@ -1128,7 +1209,7 @@ uint8_t get_weight_vbat_corrected(void)
     VextOFF();
     delay(1);
     Vhx711ON();
-    global_fault = global_fault & 0b11111101; // clear hx711 fault
+    global_fault = global_fault & 0b11110101; // clear hx711 fault
     delay(200);
     scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
     hx711_data.adc = 0;
@@ -1150,13 +1231,15 @@ uint8_t get_weight_vbat_corrected(void)
 
     Vhx711OFF();
     delta_vbat = hx711_data.offset_vbat - vbat_mv;
-    float poidsf = (((double)hx711_data.adc + ((DELTAADC / DELTAMV) * (double)delta_vbat)) - (double)hx711_data.offset_adc) / hx711_data.scale;
+    poidsf = (float)(DELTAADC / DELTAMV) * (float)delta_vbat;
+    poidsf = poidsf + (float)hx711_data.adc;
+    poidsf = (poidsf - (float)hx711_data.offset_adc) / hx711_data.scale;
     hx711_data.poids_float = roundf(poidsf * 10.000) / 10.000;
-    if (abs(poidsf) > 32760.0) {
-        poidsf = 31765.0;
+    if (abs(poidsf) > 32765.0) {
+        poidsf = 32765.0;
+        global_fault = global_fault | 0b00001000;
     }
     hx711_data.poids_int = round_float(poidsf);
-    // return hx711_adc;
     return global_fault;
 }
 
