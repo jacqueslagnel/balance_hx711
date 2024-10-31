@@ -1,6 +1,6 @@
 #include "CubeCell_NeoPixel.h"
 #include "FRAM.h"
-//#include "FRAM_MULTILANGUAGE.h"
+// #include "FRAM_MULTILANGUAGE.h"
 #include <Arduino.h>
 #include <EEPROM.h>
 #include <HX711.h>
@@ -29,6 +29,8 @@
 
 #define INT_GPIO GPIO11
 
+#define COEFVBAT 0.07100591716f
+#define TEMPFACTOR 0.230800f
 // *****************************************************************************
 // ********************* neopixel colors ***************************************
 // *****************************************************************************
@@ -165,21 +167,26 @@ float units10 = 0.0;
 int16_t delta_vbat = 0;
 #define DELTAMV 507.0
 #define DELTAADC 36.0
+float weight_scale = 112.867886670f;
 struct hx711_data_t {
     int32_t offset_adc;
     int16_t offset_vbat;
     int8_t offset_tempint;
     int8_t offset_tempext;
-    float poids_float;
-    int16_t poids_int;
+    int32_t poids_int;
+    // int32_t poids_int_cor;
     int32_t adc;
     int8_t fault;
-    float scale;
+    ;
 };
-hx711_data_t hx711_data = { 0, 0, -127, -127, 0.0, 0, 0, 0, 112.867886670f };
+hx711_data_t hx711_data = { 0, 0, -127, -127, 0, 0, 0 };
+// ********************* variables 4 derivative comp Temp *********************
+int8_t temp_old = 0;
+float derivative = 0.0;
+float derivative_old = 0.0;
 
 // *****************************************************************************
-// **************************** FRAM **********************************
+// **************************** FRAM *******************************************
 // *****************************************************************************
 /* Example code for the Adafruit I2C EEPROM/FRAM breakout */
 /* Connect SCL    to SCL
@@ -304,6 +311,9 @@ void setup()
             yy++;
             delay(100);
         }
+        temp_old = tempext;
+        derivative = 0.00;
+        derivative_old = 0.00;
 #ifdef DEBUGPRINT
         Serial.print("global_fault:\t");
         Serial.print(global_fault);
@@ -326,12 +336,13 @@ void setup()
 
         Serial.print("\tADC:\t");
         Serial.print(hx711_data.adc);
-        Serial.print("\tpoids ori:\t");
-        poids = round_float(((double)(hx711_data.adc - hx711_data.offset_adc) / hx711_data.scale));
-        units10 = roundf(((double)(hx711_data.adc - hx711_data.offset_adc) / hx711_data.scale) * 10.000) / 10.000;
-        Serial.printf("%0.1f\t%d", units10, poids);
-        Serial.print("\tpoids cor:\t");
-        Serial.printf("%0.1f\t%d\terrors: %d\n", hx711_data.poids_float, hx711_data.poids_int, global_fault);
+        Serial.print("\tpoids:\t");
+        Serial.println(hx711_data.poids_int);
+        // poids = round_float(((double)(hx711_data.adc - hx711_data.offset_adc) / hx711_data.scale));
+        // units10 = roundf(((double)(hx711_data.adc - hx711_data.offset_adc) / hx711_data.scale) * 10.000) / 10.000;
+        // Serial.printf("%0.1f\t%d", units10, poids);
+        // Serial.print("\tpoids cor:\t");
+        // Serial.printf("%0.1f\t%d\terrors: %d\n", hx711_data.poids_float, hx711_data.poids_int, global_fault);
 #endif
         Serial.flush();
         VextOFF();
@@ -427,8 +438,8 @@ void loop()
             Serial.print(time_sec_cycle);
             Serial.print("\tFault:\t");
             Serial.print(global_fault, HEX);
-            Serial.print("\thx711 g float:\t");
-            Serial.print(hx711_data.poids_float, 1);
+            //            Serial.print("\thx711 g float:\t");
+            //            Serial.print(hx711_data.poids_float, 1);
             Serial.print("\tg Int:\t");
             Serial.print(hx711_data.poids_int);
             Serial.print("\tTempInt:\t");
@@ -569,9 +580,9 @@ int16_t round_float(float mm)
 {
     int16_t poids = 0;
     if (mm < 0) {
-        poids = (int16_t)(mm - 0.5);
+        poids = int16_t(mm - 0.5);
     } else {
-        poids = (int16_t)(mm + 0.5);
+        poids = int16_t(mm + 0.5);
     }
     return poids;
 }
@@ -592,23 +603,33 @@ static void prepareTxFrame(uint8_t port)
         appData[7] = hx711_data.offset_tempext; // 8
         appData[8] = '\0';
     } else if (port == 2) { // send measures in the loop
-        appDataSize = 11;
+        appDataSize = 13;
         // code retruned fault
         appData[0] = global_fault; // fault; 0
         appData[1] = (hx711_data.adc >> 24) & 0xFF;
         appData[2] = (hx711_data.adc >> 16) & 0xFF;
         appData[3] = (hx711_data.adc >> 8) & 0xFF;
         appData[4] = hx711_data.adc & 0xFF;
-        // code the integer 16 poids
-        appData[5] = ((hx711_data.poids_int) >> 8); // 1
-        appData[6] = ((hx711_data.poids_int) & 0xFF); // 2
+        // code the integer 32 poids float *10
+        /*
+        appData[5] = (hx711_data.poids_int_cor >> 24) & 0xFF;
+        appData[6] = (hx711_data.poids_int_cor >> 16) & 0xFF;
+        appData[7] = (hx711_data.poids_int_cor >> 8) & 0xFF;
+        appData[8] = hx711_data.poids_int_cor & 0xFF;
+        */
+
+        appData[5] = (hx711_data.poids_int >> 24) & 0xFF;
+        appData[6] = (hx711_data.poids_int >> 16) & 0xFF;
+        appData[7] = (hx711_data.poids_int >> 8) & 0xFF;
+        appData[8] = hx711_data.poids_int & 0xFF;
+
         // code vBat
-        appData[7] = ((vbat_mv) >> 8); // 3
-        appData[8] = ((vbat_mv) & 0xFF); // 4
+        appData[9] = ((vbat_mv) >> 8); // 3
+        appData[10] = ((vbat_mv) & 0xFF); // 4
         // code Temp ds18b20
-        appData[9] = tempint; // 5
-        appData[10] = tempext; // 6
-        appData[11] = '\0';
+        appData[11] = tempint; // 5
+        appData[12] = tempext; // 6
+        appData[13] = '\0';
     } else {
         appDataSize = 0;
         appData[0] = '\0';
@@ -1123,6 +1144,9 @@ void scale_init(void)
     delay(10);
     Vhx711ON();
     delay(200);
+    temp_old = tempext;
+    derivative = 0.00;
+    derivative_old = 0.00;
     scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
 
     global_fault = global_fault & 0b11111001;
@@ -1166,15 +1190,14 @@ void scale_init(void)
     // scale.set_scale(67.9375000);
     // scale.set_scale(1.00000000f);
 
-    scale.set_scale(hx711_data.scale); //=(ave 75 measures sans offset)/2000 grammes
+    scale.set_scale(weight_scale); //=(ave 75 measures sans offset)/2000 grammes
 
     scale.power_down();
     Vhx711OFF();
     hx711_data.fault = global_fault;
-    hx711_data.poids_float = 0.0;
     hx711_data.poids_int = 0;
 }
-
+/*
 int16_t get_weight_g(void)
 {
     VextOFF();
@@ -1202,7 +1225,7 @@ int16_t get_weight_g(void)
     scale.power_down();
     Vhx711OFF();
     return round_float(units10);
-}
+} */
 
 uint8_t get_weight_vbat_corrected(void)
 {
@@ -1230,19 +1253,21 @@ uint8_t get_weight_vbat_corrected(void)
     scale.power_down();
 
     Vhx711OFF();
+
     delta_vbat = hx711_data.offset_vbat - vbat_mv;
-    poidsf = (float)(DELTAADC / DELTAMV) * (float)delta_vbat;
-    poidsf = poidsf + (float)hx711_data.adc;
-    poidsf = (poidsf - (float)hx711_data.offset_adc) / hx711_data.scale;
-    hx711_data.poids_float = roundf(poidsf * 10.000) / 10.000;
-    if (abs(poidsf) > 32765.0) {
-        poidsf = 32765.0;
-        global_fault = global_fault | 0b00001000;
-    }
-    hx711_data.poids_int = round_float(poidsf);
+    poidsf = float(COEFVBAT) * float(delta_vbat);
+    poidsf = poidsf + float(hx711_data.adc);
+    poidsf = (poidsf - float(hx711_data.offset_adc)) / weight_scale;
+    derivative = float(tempext - temp_old) * TEMPFACTOR + derivative_old;
+    poidsf = poidsf + derivative;
+    poidsf = roundf(poidsf * 10.000);
+    hx711_data.poids_int = int32_t(poidsf);
+    // hx711_data.poids_int_cor = int32_t(roundf(poidsf * 10.000));
+    temp_old = tempext;
+    derivative_old = derivative;
     return global_fault;
 }
-
+/*
 long hx711_read_ave(void)
 {
     VextOFF();
@@ -1260,7 +1285,7 @@ long hx711_read_ave(void)
     scale.power_down();
     Vhx711OFF();
     return hx711_data.adc;
-}
+} */
 
 // https://github.com/RobTillaart/FRAM_I2C/blob/master/examples/FRAM_clear/FRAM_clear.ino
 
@@ -1270,7 +1295,7 @@ bool fram_write(uint16_t adr, int16_t data)
     VextON();
     delay(5);
     if (fram.begin(EEPROM_ADDR)) { // you can stick the new i2c addr in here, e.g. begin(0x51);
-    //fram.writeObject(0,hx711_data);
+        // fram.writeObject(0,hx711_data);
         fram.write16(adr, data);
         if (data == fram.read16(adr)) {
             vr = true;
