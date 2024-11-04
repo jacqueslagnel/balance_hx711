@@ -257,7 +257,7 @@ void fram_test(void);
 // *****************************************************************************
 
 // ************************** timout ********************************
-volatile uint16_t time_sec_cycle = 5 * 60; // seconds
+volatile uint16_t time_sec_cycle = 150; // 5 * 60; // seconds
 // ************************************************************************************
 
 // ************************** if debug we use print ********************
@@ -451,6 +451,30 @@ void loop()
             // Serial.printf("Timeout\t%d,%02X,%d,%d,%0.3f\n",time_sec_cycle,global_fault,poids,tempint,(float)vbat_mv/1000.000);
             Serial.flush();
 #endif
+
+            Serial.print(global_fault);
+            Serial.print("\t");
+            Serial.print(hx711_data.offset_adc);
+            Serial.print("\t");
+            Serial.print(hx711_data.offset_vbat);
+            Serial.print("\t");
+            Serial.print(hx711_data.offset_tempint);
+            Serial.print("\t");
+            Serial.print(hx711_data.offset_tempext);
+
+            Serial.print("\t");
+            Serial.print(tempint);
+            Serial.print("\t");
+            Serial.print(tempext);
+
+            Serial.print("\t");
+            Serial.print(vbat_mv);
+
+            Serial.print("\t");
+            Serial.print(hx711_data.adc);
+            Serial.print("\t");
+            Serial.println(poidsf);
+
             appPort = 2;
             prepareTxFrame(appPort);
         }
@@ -1258,13 +1282,14 @@ uint8_t get_weight_vbat_corrected(void)
     poidsf = float(COEFVBAT) * float(delta_vbat);
     poidsf = poidsf + float(hx711_data.adc);
     poidsf = (poidsf - float(hx711_data.offset_adc)) / weight_scale;
-    derivative = float(tempext - temp_old) * TEMPFACTOR + derivative_old;
-    poidsf = poidsf + derivative;
+    // derivative = float(tempext - temp_old) * TEMPFACTOR + derivative_old;
+    //  poidsf = poidsf + derivative;
     poidsf = roundf(poidsf * 10.000);
     hx711_data.poids_int = int32_t(poidsf);
+    poidsf = poidsf / 10;
     // hx711_data.poids_int_cor = int32_t(roundf(poidsf * 10.000));
-    temp_old = tempext;
-    derivative_old = derivative;
+    //  temp_old = tempext;
+    //  derivative_old = derivative;
     return global_fault;
 }
 /*
