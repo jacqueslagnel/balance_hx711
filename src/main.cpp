@@ -134,8 +134,8 @@ uint8_t confirmedNbTrials = 4;
 // UART_TX2 P4_5
 
 // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
-int8_t tempint = -127;
-int8_t tempext = -127;
+// int16_t tempint = -127;
+// int16_t tempext = -127;
 // ds count: 1     ADR: 28 4B 62 A5 C 0 0 92       CRC OK
 // ds count: 2     ADR: 28 77 B FF D 0 0 88        CRC OK
 // Addr: 28 77 B FF D 0 0 88       Time: 77 ms     Data = 1 60 1 0 0 1F FF 10 10 DD  CRC=DD        Temperature = 22.00
@@ -171,19 +171,22 @@ float weight_scale = 112.867886670f;
 struct hx711_data_t {
     int32_t offset_adc;
     int16_t offset_vbat;
-    int8_t offset_tempint;
-    int8_t offset_tempext;
-    int32_t poids_int;
+    int16_t offset_tempint;
+    int16_t offset_tempext;
+    int32_t poids_int; // float *10
     // int32_t poids_int_cor;
     int32_t adc;
+    int16_t tempint;
+    int16_t tempext;
+    int16_t vbat;
     int8_t fault;
     ;
 };
-hx711_data_t hx711_data = { 0, 0, -127, -127, 0, 0, 0 };
+hx711_data_t hx711_data = { 0, 0, -12700, -12700, 0, 0, -12700, -12700, 0, 0 };
 // ********************* variables 4 derivative comp Temp *********************
-int8_t temp_old = 0;
-float derivative = 0.0;
-float derivative_old = 0.0;
+// int16_t temp_old = 0;
+// float derivative = 0.0;
+// float derivative_old = 0.0;
 
 // *****************************************************************************
 // **************************** FRAM *******************************************
@@ -239,7 +242,7 @@ int16_t round_float(float mm);
 void onWakeUp(void);
 
 // int8_t get_temperature(void);
-int8_t get_temperature(byte addr[8]);
+int16_t get_temperature(byte addr[8]);
 
 int8_t OneWireScan(void);
 
@@ -297,23 +300,23 @@ void setup()
         vbat_mv = readBatLevel();
         get_weight_vbat_corrected();
 
-        tempint = get_temperature(addr_int);
-        tempext = get_temperature(addr_ext);
+        hx711_data.tempint = get_temperature(addr_int);
+        hx711_data.tempext = get_temperature(addr_ext);
         byte yy = 0;
-        while (tempint < -120 && yy < 3) {
-            tempint = get_temperature(addr_int);
+        while (hx711_data.tempint < -120 && yy < 3) {
+            hx711_data.tempint = get_temperature(addr_int);
             yy++;
             delay(100);
         }
         yy = 0;
-        while (tempext < -120 && yy < 3) {
-            tempext = get_temperature(addr_ext);
+        while (hx711_data.tempext < -120 && yy < 3) {
+            hx711_data.tempext = get_temperature(addr_ext);
             yy++;
             delay(100);
         }
-        temp_old = tempext;
-        derivative = 0.00;
-        derivative_old = 0.00;
+        // temp_old = tempext;
+        // derivative = 0.00;
+        // derivative_old = 0.00;
 #ifdef DEBUGPRINT
         Serial.print("global_fault:\t");
         Serial.print(global_fault);
@@ -327,9 +330,9 @@ void setup()
         Serial.print(hx711_data.offset_tempext);
 
         Serial.print("\tTempInt:\t");
-        Serial.print(tempint);
+        Serial.print(hx711_data.tempint / 100.0);
         Serial.print("\tTempExt:\t");
-        Serial.println(tempext);
+        Serial.print(hx711_data.tempext / 100.0);
 
         Serial.print("\tVbat:\t");
         Serial.print(vbat_mv);
@@ -419,16 +422,16 @@ void loop()
             vbat_mv = readBatLevel();
             get_weight_vbat_corrected();
             byte yy = 0;
-            tempint = get_temperature(addr_int);
-            tempext = get_temperature(addr_ext);
-            while (tempint < -120 && yy < 3) {
-                tempint = get_temperature(addr_int);
+            hx711_data.tempint = get_temperature(addr_int);
+            hx711_data.tempext = get_temperature(addr_ext);
+            while (hx711_data.tempint < -12000 && yy < 3) {
+                hx711_data.tempint = get_temperature(addr_int);
                 yy++;
                 delay(100);
             }
             yy = 0;
-            while (tempext < -120 && yy < 3) {
-                tempext = get_temperature(addr_ext);
+            while (hx711_data.tempext < -12000 && yy < 3) {
+                hx711_data.tempext = get_temperature(addr_ext);
                 yy++;
                 delay(100);
             }
@@ -443,9 +446,9 @@ void loop()
             Serial.print("\tg Int:\t");
             Serial.print(hx711_data.poids_int);
             Serial.print("\tTempInt:\t");
-            Serial.print(tempint);
+            Serial.print(hx711_data.tempint / 100.0);
             Serial.print("\tTempExt:\t");
-            Serial.print(tempext);
+            Serial.print(hx711_data.tempext / 100.0);
             Serial.print("\tVbat:\t");
             Serial.println(vbat_mv);
             // Serial.printf("Timeout\t%d,%02X,%d,%d,%0.3f\n",time_sec_cycle,global_fault,poids,tempint,(float)vbat_mv/1000.000);
@@ -453,26 +456,26 @@ void loop()
 #endif
 
             Serial.print(global_fault);
-            Serial.print("\t");
+            Serial.print(",");
             Serial.print(hx711_data.offset_adc);
-            Serial.print("\t");
+            Serial.print(",");
             Serial.print(hx711_data.offset_vbat);
-            Serial.print("\t");
-            Serial.print(hx711_data.offset_tempint);
-            Serial.print("\t");
-            Serial.print(hx711_data.offset_tempext);
+            Serial.print(",");
+            Serial.print(hx711_data.offset_tempint / 100.0);
+            Serial.print(",");
+            Serial.print(hx711_data.offset_tempext / 100.0);
 
-            Serial.print("\t");
-            Serial.print(tempint);
-            Serial.print("\t");
-            Serial.print(tempext);
+            Serial.print(",");
+            Serial.print(hx711_data.tempint / 100.0);
+            Serial.print(",");
+            Serial.print(hx711_data.tempext / 100.0);
 
-            Serial.print("\t");
+            Serial.print(",");
             Serial.print(vbat_mv);
 
-            Serial.print("\t");
+            Serial.print(",");
             Serial.print(hx711_data.adc);
-            Serial.print("\t");
+            Serial.print(",");
             Serial.println(poidsf);
 
             appPort = 2;
@@ -615,7 +618,7 @@ int16_t round_float(float mm)
 static void prepareTxFrame(uint8_t port)
 {
     if (port == 3) { // send the parameters on port 3
-        appDataSize = 8;
+        appDataSize = 10;
         // ADC offset
         appData[0] = (hx711_data.offset_adc >> 24) & 0xFF;
         appData[1] = (hx711_data.offset_adc >> 16) & 0xFF;
@@ -623,11 +626,13 @@ static void prepareTxFrame(uint8_t port)
         appData[3] = hx711_data.offset_adc & 0xFF;
         appData[4] = ((hx711_data.offset_vbat) >> 8); // 5
         appData[5] = ((hx711_data.offset_vbat) & 0xFF); // 6
-        appData[6] = hx711_data.offset_tempint; // 7
-        appData[7] = hx711_data.offset_tempext; // 8
-        appData[8] = '\0';
+        appData[6] = ((hx711_data.offset_tempint) >> 8); // 5
+        appData[7] = ((hx711_data.offset_tempint) & 0xFF); // 5
+        appData[8] = ((hx711_data.offset_tempext) >> 8); // 5
+        appData[9] = ((hx711_data.offset_tempext) & 0xFF); // 5
+        appData[10] = '\0';
     } else if (port == 2) { // send measures in the loop
-        appDataSize = 13;
+        appDataSize = 15;
         // code retruned fault
         appData[0] = global_fault; // fault; 0
         appData[1] = (hx711_data.adc >> 24) & 0xFF;
@@ -650,10 +655,14 @@ static void prepareTxFrame(uint8_t port)
         // code vBat
         appData[9] = ((vbat_mv) >> 8); // 3
         appData[10] = ((vbat_mv) & 0xFF); // 4
+
         // code Temp ds18b20
-        appData[11] = tempint; // 5
-        appData[12] = tempext; // 6
-        appData[13] = '\0';
+        appData[11] = ((hx711_data.tempint) >> 8); // 5
+        appData[12] = ((hx711_data.tempint) & 0xFF); // 5
+        appData[13] = ((hx711_data.tempext) >> 8); // 5
+        appData[14] = ((hx711_data.tempext) & 0xFF); // 5
+
+        appData[15] = '\0';
     } else {
         appDataSize = 0;
         appData[0] = '\0';
@@ -792,21 +801,21 @@ int8_t OneWireScan(void)
         */
 }
 
-int8_t get_temperature(byte addr[8])
+int16_t get_temperature(byte addr[8])
 {
     // https://forum.arduino.cc/t/ds18b20-temperature-sensor-using-onewire-library/699347/10
-    float tp = -127;
+    float tp = -127.0;
     byte i;
     byte present = 0;
     byte type_s;
     byte data[9];
     // byte addr[8];
     // 9 bits
-    byte dsRes[] = { 0x00, 0x00, 0x1F }; //, 0x1F(0 R1 R0 11111)/0x3F/0x5F/0x7F for 9-10-11-12-bit Resolutio
+    // byte dsRes[] = { 0x00, 0x00, 0x1F }; //, 0x1F(0 R1 R0 11111)/0x3F/0x5F/0x7F for 9-10-11-12-bit Resolutio 0.5 deg
     // 10 bits
-    // byte dsRes[] = { 0x00, 0x00, 0x3F }; //, 0x1F(0 R1 R0 11111)/0x3F/0x5F/0x7F for 9-10-11-12-bit Resolutio
+    byte dsRes[] = { 0x00, 0x00, 0x3F }; //, 0x1F(0 R1 R0 11111)/0x3F/0x5F/0x7F for 9-10-11-12-bit Resolutio 0.25 deg
     // 12bits
-    // byte dsRes[] = { 0x00, 0x00,  0x7F}; //, 0x1F(0 R1 R0 11111)/0x3F/0x5F/0x7F for 9-10-11-12-bit Resolutio
+    // byte dsRes[] = { 0x00, 0x00,  0x7F}; //, 0x1F(0 R1 R0 11111)/0x3F/0x5F/0x7F for 9-10-11-12-bit Resolutio 0.0625 deg
 
     VextON();
     pinMode(ONE_WIRE_BUS, INPUT);
@@ -880,7 +889,7 @@ int8_t get_temperature(byte addr[8])
     present = ds18b20.reset();
     if (present < 1) {
         VextOFF();
-        return -127;
+        return -12700;
     }
     ds18b20.select(addr);
     ds18b20.write(0xBE); // Read Scratchpad
@@ -927,7 +936,7 @@ int8_t get_temperature(byte addr[8])
 
     // pinMode(ONE_WIRE_BUS, OUTPUT);
     VextOFF();
-    return (int8_t)(round_float(tp));
+    return (int16_t)(tp * 100.0);
 }
 
 /*
@@ -1168,9 +1177,9 @@ void scale_init(void)
     delay(10);
     Vhx711ON();
     delay(200);
-    temp_old = tempext;
-    derivative = 0.00;
-    derivative_old = 0.00;
+    // temp_old = tempext;
+    // derivative = 0.00;
+    // derivative_old = 0.00;
     scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
 
     global_fault = global_fault & 0b11111001;
