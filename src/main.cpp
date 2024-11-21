@@ -7,27 +7,20 @@
 #include <LoRaWan_APP.h>
 #include <OneWire.h>
 
-/*
-#if BOARD == cubecell_module_plus
-// module
-#define VEXT_PIN GPIO10
-#define ONE_WIRE_BUS UART_TX2
-#define NEOPIXEL_DIN_PIN GPIO15
-#else
-// board
-#define VEXT_PIN Vext
-#define ONE_WIRE_BUS GPIO12
-#define NEOPIXEL_DIN_PIN GPIO13
-#endif
-*/
-#define VEXT_PIN GPIO10
-#define ONE_WIRE_BUS UART_TX2
-#define NEOPIXEL_DIN_PIN GPIO15
+#define VEXT_PIN GPIO11
+#define ONE_WIRE_INT GPIO12
+#define ONE_WIRE_EXT GPIO10
+#define NEOPIXEL_DIN_PIN GPIO5
 
 #define VEXT1_PIN GPIO7
-#define VEXT_VBAT_PIN GPIO5
+#define VEXT_VBAT_PIN GPIO15
+#define INT_GPIO GPIO6
 
-#define INT_GPIO GPIO11
+// HX711 circuit wiring
+// const int LOADCELL_DOUT_PIN = GPIO9; // blue data
+// const int LOADCELL_SCK_PIN = GPIO8; // violet clk
+#define LOADCELL_DOUT_PIN GPIO9
+#define LOADCELL_SCK_PIN GPIO8
 
 #define COEFVBAT 0.07100591716f
 #define TEMPFACTOR 0.230800f
@@ -143,15 +136,14 @@ uint8_t confirmedNbTrials = 4;
 // TempInt:        22      TempExt:        27
 byte addr_int[8] = { 0x28, 0x77, 0x0B, 0xFF, 0x0D, 0x00, 0x00, 0x88 };
 byte addr_ext[8] = { 0x28, 0x4B, 0x62, 0xA5, 0x0C, 0x00, 0x00, 0x92 };
-OneWire ds18b20(ONE_WIRE_BUS); // on pin GPIO1 PIN 6 (a 4.7K resistor is necessary)
+OneWire ds18b20_int(ONE_WIRE_INT); // on pin GPIO1 PIN 6 (a 4.7K resistor is necessary)
+OneWire ds18b20_ext(ONE_WIRE_EXT); // on pin GPIO1 PIN 6 (a 4.7K resistor is necessary)
 // OneWire ds18b20_ext(ONE_WIRE_BUS_EXT); // on digital pin 2
 
 // *****************************************************************************
 // ************************* hx711 *********************************************
 // *****************************************************************************
-// HX711 circuit wiring
-const int LOADCELL_DOUT_PIN = GPIO9; // blue data
-const int LOADCELL_SCK_PIN = GPIO8; // violet clk
+
 // in arduino.h:
 // comment #define pinMode(pin,mode) PINMODE_ ## mode(pin)
 // put in the HX711.cpp:
@@ -242,9 +234,11 @@ int16_t round_float(float mm);
 void onWakeUp(void);
 
 // int8_t get_temperature(void);
-int16_t get_temperature(byte addr[8]);
-
-int8_t OneWireScan(void);
+// int16_t get_temperature(byte addr[8]);
+// int8_t OneWireScan(void);
+int16_t get_temperature_int(void);
+int16_t get_temperature_ext(void);
+int16_t get_temperature(OneWire& myds, uint8_t mypin);
 
 void downLinkDataHandle(McpsIndication_t* mcpsIndication);
 void scale_init(void);
@@ -264,7 +258,7 @@ volatile uint16_t time_sec_cycle = 150; // 5 * 60; // seconds
 // ************************************************************************************
 
 // ************************** if debug we use print ********************
- #define DEBUGPRINT 1
+#define DEBUGPRINT 1
 // #define TESTING 1
 //   *********************************************************************
 
@@ -300,20 +294,23 @@ void setup()
         vbat_mv = readBatLevel();
         get_weight_vbat_corrected();
 
-        hx711_data.tempint = get_temperature(addr_int);
-        hx711_data.tempext = get_temperature(addr_ext);
+        hx711_data.tempint = get_temperature_int();
+        hx711_data.tempext = get_temperature_int();
         byte yy = 0;
         while (hx711_data.tempint < -120 && yy < 3) {
-            hx711_data.tempint = get_temperature(addr_int);
+            hx711_data.tempint = get_temperature_int();
             yy++;
             delay(100);
         }
         yy = 0;
         while (hx711_data.tempext < -120 && yy < 3) {
-            hx711_data.tempext = get_temperature(addr_ext);
+            hx711_data.tempext = get_temperature_int();
             yy++;
             delay(100);
         }
+        hx711_data.tempint = get_temperature(ds18b20_int, ONE_WIRE_INT);
+        Serial.print("\nget_temperature by pointer TempInt:\t");
+        Serial.println(hx711_data.tempint / 100.0);
         // temp_old = tempext;
         // derivative = 0.00;
         // derivative_old = 0.00;
@@ -422,16 +419,16 @@ void loop()
             vbat_mv = readBatLevel();
             get_weight_vbat_corrected();
             byte yy = 0;
-            hx711_data.tempint = get_temperature(addr_int);
-            hx711_data.tempext = get_temperature(addr_ext);
+            hx711_data.tempint = get_temperature_int();
+            hx711_data.tempext = get_temperature_ext();
             while (hx711_data.tempint < -12000 && yy < 3) {
-                hx711_data.tempint = get_temperature(addr_int);
+                hx711_data.tempint = get_temperature_int();
                 yy++;
                 delay(100);
             }
             yy = 0;
             while (hx711_data.tempext < -12000 && yy < 3) {
-                hx711_data.tempext = get_temperature(addr_ext);
+                hx711_data.tempext = get_temperature_ext();
                 yy++;
                 delay(100);
             }
@@ -730,6 +727,7 @@ void onWakeUp(void)
     }
 }
 
+/*
 // https://www.dekloo.net/arduino-raspberry/arduino-capteurs-de-temperature-ds18s20/1020
 int8_t OneWireScan(void)
 {
@@ -767,40 +765,41 @@ int8_t OneWireScan(void)
 
     VextOFF();
     return nbds;
-    /*
-        if (!ds18b20.search(addr)) {
-            Serial.print("No more addresses.\n");
-            ds18b20.reset_search();
-            VextOFF();
-            return;
-        }
 
-        Serial.print("R=");
-        for (i = 0; i < 8; i++) {
-            Serial.print(addr[i], HEX);
-            Serial.print(" ");
-        }
+        // if (!ds18b20.search(addr)) {
+        //     Serial.print("No more addresses.\n");
+        //     ds18b20.reset_search();
+        //     VextOFF();
+        //     return;
+        // }
 
-        if (OneWire::crc8(addr, 7) != addr[7]) {
-            Serial.print("CRC is not valid!\n");
-            VextOFF();
-            return;
-        }
+        // Serial.print("R=");
+        // for (i = 0; i < 8; i++) {
+        //     Serial.print(addr[i], HEX);
+        //     Serial.print(" ");
+        // }
 
-        if (addr[0] == 0x10) {
-            Serial.print("Device is a DS18S20 family device.\n");
-        } else if (addr[0] == 0x28) {
-            Serial.print("Device is a DS18B20 family device.\n");
-        } else {
-            Serial.print("Device family is not recognized: 0x");
-            Serial.println(addr[0], HEX);
-            VextOFF();
-            return;
-        }
-        VextOFF();
-        */
+        // if (OneWire::crc8(addr, 7) != addr[7]) {
+        //     Serial.print("CRC is not valid!\n");
+        //     VextOFF();
+        //     return;
+        // }
+
+        // if (addr[0] == 0x10) {
+        //     Serial.print("Device is a DS18S20 family device.\n");
+        // } else if (addr[0] == 0x28) {
+        //     Serial.print("Device is a DS18B20 family device.\n");
+        // } else {
+        //     Serial.print("Device family is not recognized: 0x");
+        //     Serial.println(addr[0], HEX);
+        //     VextOFF();
+        //     return;
+        // }
+        // VextOFF();
+
 }
-
+*/
+/*
 int16_t get_temperature(byte addr[8])
 {
     // https://forum.arduino.cc/t/ds18b20-temperature-sensor-using-onewire-library/699347/10
@@ -828,15 +827,15 @@ int16_t get_temperature(byte addr[8])
     // ds18b20.search(addr);
     // ds18b20.reset_search();
 
-    /*
-        ds18b20.reset();
-        if (OneWire::crc8(addr, 7) != addr[7]) {
-           // Serial.println("CRC is not valid!");
-            //  global_fault = global_fault | 0b00000001;
-            //  VextOFF();
-            return -127;
-        }
-    */
+
+    //    ds18b20.reset();
+    //    if (OneWire::crc8(addr, 7) != addr[7]) {
+    //       // Serial.println("CRC is not valid!");
+    //        //  global_fault = global_fault | 0b00000001;
+    //        //  VextOFF();
+     //       return -127;
+     //   }
+
     // the first ROM byte indicates which chip
     // switch (addr[0]) {
     // case 0x10:
@@ -860,12 +859,12 @@ int16_t get_temperature(byte addr[8])
     ds18b20.reset();
     ds18b20.select(addr);
     /*
-     Serial.print("Addr: ");
-     for (i = 0; i < 8; i++) { // we need 9 bytes
-         Serial.print(addr[i], HEX);
-         Serial.print(" ");
-     }
-     */
+  //   Serial.print("Addr: ");
+  //   for (i = 0; i < 8; i++) { // we need 9 bytes
+  //       Serial.print(addr[i], HEX);
+   //      Serial.print(" ");
+   //  }
+
     // Serial.println(" ");
     ds18b20.write(0x4E);
     ds18b20.write_bytes(dsRes, 3, 1); // set resolution bit
@@ -879,11 +878,11 @@ int16_t get_temperature(byte addr[8])
         busStatus = ds18b20.read(); // keep reading until conversion is done
     } while (busStatus != 0xFF && (millis() - prMillis) < 900); // busStatus = 0xFF means conversion done
     //---------------------------
-    /*
-    Serial.print("\tTime: ");
-    Serial.print(millis() - prMillis);
-    Serial.print(" ms");
-*/
+
+  //  Serial.print("\tTime: ");
+  //  Serial.print(millis() - prMillis);
+  //  Serial.print(" ms");
+
     // delay(250); // 1000mS, maybe 750ms is enough, maybe not
     // we might do a ds.depower() here, but the reset will take care of it.
     present = ds18b20.reset();
@@ -893,11 +892,11 @@ int16_t get_temperature(byte addr[8])
     }
     ds18b20.select(addr);
     ds18b20.write(0xBE); // Read Scratchpad
-    /*
-        Serial.print("\tData = ");
-        Serial.print(present, HEX);
-        Serial.print(" ");
-        */
+
+      //  Serial.print("\tData = ");
+      //  Serial.print(present, HEX);
+      //  Serial.print(" ");
+
     for (i = 0; i < 9; i++) { // we need 9 bytes
         data[i] = ds18b20.read();
         //  Serial.print(data[i], HEX);
@@ -937,10 +936,9 @@ int16_t get_temperature(byte addr[8])
     // pinMode(ONE_WIRE_BUS, OUTPUT);
     VextOFF();
     return (int16_t)(tp * 100.0);
-}
+} */
 
-/*
-int8_t get_temperature(void)
+int16_t get_temperature_int(void)
 {
     // https://forum.arduino.cc/t/ds18b20-temperature-sensor-using-onewire-library/699347/10
     float tp = 0;
@@ -950,9 +948,9 @@ int8_t get_temperature(void)
     byte data[9];
     byte addr[8];
     // 9 bits
-    byte dsRes[] = { 0x00, 0x00, 0x1F }; //, 0x1F(0 R1 R0 11111)/0x3F/0x5F/0x7F for 9-10-11-12-bit Resolutio
+    // byte dsRes[] = { 0x00, 0x00, 0x1F }; //, 0x1F(0 R1 R0 11111)/0x3F/0x5F/0x7F for 9-10-11-12-bit Resolutio
     // 10 bits
-    // byte dsRes[] = { 0x00, 0x00, 0x3F }; //, 0x1F(0 R1 R0 11111)/0x3F/0x5F/0x7F for 9-10-11-12-bit Resolutio
+    byte dsRes[] = { 0x00, 0x00, 0x3F }; //, 0x1F(0 R1 R0 11111)/0x3F/0x5F/0x7F for 9-10-11-12-bit Resolutio 0.25 deg
     // 12bits
     // byte dsRes[] = { 0x00, 0x00,  0x7F}; //, 0x1F(0 R1 R0 11111)/0x3F/0x5F/0x7F for 9-10-11-12-bit Resolutio
 
@@ -960,23 +958,22 @@ int8_t get_temperature(void)
 
     VextON();
     delay(150);
-    pinMode(ONE_WIRE_BUS, INPUT);
-    ds18b20.begin(ONE_WIRE_BUS);
+    pinMode(ONE_WIRE_INT, INPUT);
+    ds18b20_int.begin(ONE_WIRE_INT);
 
     Serial.print(" present?:");
-    Serial.println(ds18b20.reset());
-    ds18b20.reset_search();
-    ds18b20.search(addr);
-    ds18b20.reset_search();
+    Serial.println(ds18b20_int.reset());
+    ds18b20_int.reset_search();
+    ds18b20_int.search(addr);
+    ds18b20_int.reset_search();
     global_fault = global_fault & 0b11111110;
 
     if (OneWire::crc8(addr, 7) != addr[7]) {
-         Serial.println("CRC is not valid!");
+        Serial.println("CRC is not valid!");
         global_fault = global_fault | 0b00000001;
         VextOFF();
         return -127;
     }
-
 
     // the first ROM byte indicates which chip
     // switch (addr[0]) {
@@ -998,23 +995,23 @@ int8_t get_temperature(void)
     // }
 
     type_s = 0; // DS18B20
-    ds18b20.reset();
-    ds18b20.select(addr);
+    ds18b20_int.reset();
+    ds18b20_int.select(addr);
     for (i = 0; i < 8; i++) { // we need 9 bytes
         Serial.print(addr[i], HEX);
         Serial.print(" ");
     }
     Serial.println(" ");
-    ds18b20.write(0x4E);
-    ds18b20.write_bytes(dsRes, 3, 1); // set resolution bit
-    ds18b20.reset();
-    ds18b20.select(addr);
-    ds18b20.write(0x44, 1); // start conversion, with parasite power on at the end
+    ds18b20_int.write(0x4E);
+    ds18b20_int.write_bytes(dsRes, 3, 1); // set resolution bit
+    ds18b20_int.reset();
+    ds18b20_int.select(addr);
+    ds18b20_int.write(0x44, 1); // start conversion, with parasite power on at the end
     unsigned long prMillis = millis();
     byte busStatus = 0;
     do // keep reading the ststus word until conversion is complete
     {
-        busStatus = ds18b20.read(); // keep reading until conversion is done
+        busStatus = ds18b20_int.read(); // keep reading until conversion is done
     } while (busStatus != 0xFF && (millis() - prMillis) < 900); // busStatus = 0xFF means conversion done
     //---------------------------
     Serial.print("Conversion time: ");
@@ -1023,19 +1020,19 @@ int8_t get_temperature(void)
 
     // delay(250); // 1000mS, maybe 750ms is enough, maybe not
     // we might do a ds.depower() here, but the reset will take care of it.
-    present = ds18b20.reset();
-    ds18b20.select(addr);
-    ds18b20.write(0xBE); // Read Scratchpad
+    present = ds18b20_int.reset();
+    ds18b20_int.select(addr);
+    ds18b20_int.write(0xBE); // Read Scratchpad
 
     Serial.print("  Data = ");
     Serial.print(present, HEX);
     Serial.print(" ");
     for (i = 0; i < 9; i++) { // we need 9 bytes
-        data[i] = ds18b20.read();
+        data[i] = ds18b20_int.read();
         Serial.print(data[i], HEX);
         Serial.print(" ");
     }
-    ds18b20.depower();
+    ds18b20_int.depower();
     Serial.print(" CRC=");
     Serial.print(OneWire::crc8(data, 8), HEX);
     Serial.println();
@@ -1068,9 +1065,229 @@ int8_t get_temperature(void)
 
     // pinMode(ONE_WIRE_BUS, OUTPUT);
     VextOFF();
-    return (int8_t)(round_float(tp));
+    // return (int8_t)(round_float(tp));
+    return (int16_t)(tp * 100.0);
 }
-*/
+
+int16_t get_temperature_ext(void)
+{
+    // https://forum.arduino.cc/t/ds18b20-temperature-sensor-using-onewire-library/699347/10
+    float tp = 0;
+    byte i;
+    byte present = 0;
+    byte type_s;
+    byte data[9];
+    byte addr[8];
+    // 9 bits
+    // byte dsRes[] = { 0x00, 0x00, 0x1F }; //, 0x1F(0 R1 R0 11111)/0x3F/0x5F/0x7F for 9-10-11-12-bit Resolutio
+    // 10 bits
+    byte dsRes[] = { 0x00, 0x00, 0x3F }; //, 0x1F(0 R1 R0 11111)/0x3F/0x5F/0x7F for 9-10-11-12-bit Resolutio 0.25 deg
+    // 12bits
+    // byte dsRes[] = { 0x00, 0x00,  0x7F}; //, 0x1F(0 R1 R0 11111)/0x3F/0x5F/0x7F for 9-10-11-12-bit Resolutio
+
+    // float celsius, fahrenheit;
+
+    VextON();
+    delay(150);
+    pinMode(ONE_WIRE_EXT, INPUT);
+    ds18b20_ext.begin(ONE_WIRE_EXT);
+
+    Serial.print(" present?:");
+    Serial.println(ds18b20_ext.reset());
+    ds18b20_ext.reset_search();
+    ds18b20_ext.search(addr);
+    ds18b20_ext.reset_search();
+    global_fault = global_fault & 0b11111110;
+
+    if (OneWire::crc8(addr, 7) != addr[7]) {
+        Serial.println("CRC is not valid!");
+        global_fault = global_fault | 0b00000001;
+        VextOFF();
+        return -127;
+    }
+
+    type_s = 0; // DS18B20
+    ds18b20_ext.reset();
+    ds18b20_ext.select(addr);
+    for (i = 0; i < 8; i++) { // we need 9 bytes
+        Serial.print(addr[i], HEX);
+        Serial.print(" ");
+    }
+    Serial.println(" ");
+    ds18b20_ext.write(0x4E);
+    ds18b20_ext.write_bytes(dsRes, 3, 1); // set resolution bit
+    ds18b20_ext.reset();
+    ds18b20_ext.select(addr);
+    ds18b20_ext.write(0x44, 1); // start conversion, with parasite power on at the end
+    unsigned long prMillis = millis();
+    byte busStatus = 0;
+    do // keep reading the ststus word until conversion is complete
+    {
+        busStatus = ds18b20_ext.read(); // keep reading until conversion is done
+    } while (busStatus != 0xFF && (millis() - prMillis) < 900); // busStatus = 0xFF means conversion done
+    //---------------------------
+    Serial.print("Conversion time: ");
+    Serial.print(millis() - prMillis);
+    Serial.println(" ms");
+
+    // delay(250); // 1000mS, maybe 750ms is enough, maybe not
+    // we might do a ds.depower() here, but the reset will take care of it.
+    present = ds18b20_ext.reset();
+    ds18b20_ext.select(addr);
+    ds18b20_ext.write(0xBE); // Read Scratchpad
+
+    Serial.print("  Data = ");
+    Serial.print(present, HEX);
+    Serial.print(" ");
+    for (i = 0; i < 9; i++) { // we need 9 bytes
+        data[i] = ds18b20_ext.read();
+        Serial.print(data[i], HEX);
+        Serial.print(" ");
+    }
+    ds18b20_ext.depower();
+    Serial.print(" CRC=");
+    Serial.print(OneWire::crc8(data, 8), HEX);
+    Serial.println();
+
+    // Convert the data to actual temperature
+    // because the result is a 16 bit signed integer, it should
+    // be stored to an "int16_t" type, which is always 16 bits
+    // even when compiled on a 32 bit processor.
+    int16_t raw = (data[1] << 8) | data[0];
+    if (type_s) {
+        raw = raw << 3; // 9 bit resolution default
+        if (data[7] == 0x10) {
+            // "count remain" gives full 12 bit resolution
+            raw = (raw & 0xFFF0) + 12 - data[6];
+        }
+    } else {
+        byte cfg = (data[4] & 0x60);
+        // at lower res, the low bits are undefined, so let's zero them
+        if (cfg == 0x00)
+            raw = raw & ~7; // 9 bit resolution, 93.75 ms
+        else if (cfg == 0x20)
+            raw = raw & ~3; // 10 bit res, 187.5 ms
+        else if (cfg == 0x40)
+            raw = raw & ~1; // 11 bit res, 375 ms
+        //// default is 12 bit resolution, 750 ms conversion time
+    }
+    tp = (float)raw / 16.0;
+    Serial.print("  Temperature = ");
+    Serial.println(tp);
+
+    VextOFF();
+    return (int16_t)(tp * 100.0);
+}
+
+int16_t get_temperature(OneWire& myds, uint8_t mypin)
+{
+    // https://forum.arduino.cc/t/ds18b20-temperature-sensor-using-onewire-library/699347/10
+    float tp = 0;
+    byte i;
+    byte present = 0;
+    byte type_s;
+    byte data[9];
+    byte addr[8];
+    // 9 bits
+    // byte dsRes[] = { 0x00, 0x00, 0x1F }; //, 0x1F(0 R1 R0 11111)/0x3F/0x5F/0x7F for 9-10-11-12-bit Resolutio
+    // 10 bits
+    byte dsRes[] = { 0x00, 0x00, 0x3F }; //, 0x1F(0 R1 R0 11111)/0x3F/0x5F/0x7F for 9-10-11-12-bit Resolutio 0.25 deg
+    // 12bits
+    // byte dsRes[] = { 0x00, 0x00,  0x7F}; //, 0x1F(0 R1 R0 11111)/0x3F/0x5F/0x7F for 9-10-11-12-bit Resolutio
+
+    // float celsius, fahrenheit;
+
+    VextON();
+    delay(150);
+    pinMode(mypin, INPUT);
+    myds.begin(mypin);
+
+    Serial.print(" present?:");
+    Serial.println(myds.reset());
+    myds.reset_search();
+    myds.search(addr);
+    myds.reset_search();
+    global_fault = global_fault & 0b11111110;
+
+    if (OneWire::crc8(addr, 7) != addr[7]) {
+        Serial.println("CRC is not valid!");
+        global_fault = global_fault | 0b00000001;
+        VextOFF();
+        return -127;
+    }
+
+    type_s = 0; // DS18B20
+    myds.reset();
+    myds.select(addr);
+    for (i = 0; i < 8; i++) { // we need 9 bytes
+        Serial.print(addr[i], HEX);
+        Serial.print(" ");
+    }
+    Serial.println(" ");
+    myds.write(0x4E);
+    myds.write_bytes(dsRes, 3, 1); // set resolution bit
+    myds.reset();
+    myds.select(addr);
+    myds.write(0x44, 1); // start conversion, with parasite power on at the end
+    unsigned long prMillis = millis();
+    byte busStatus = 0;
+    do // keep reading the ststus word until conversion is complete
+    {
+        busStatus = myds.read(); // keep reading until conversion is done
+    } while (busStatus != 0xFF && (millis() - prMillis) < 900); // busStatus = 0xFF means conversion done
+    //---------------------------
+    Serial.print("Conversion time: ");
+    Serial.print(millis() - prMillis);
+    Serial.println(" ms");
+
+    // delay(250); // 1000mS, maybe 750ms is enough, maybe not
+    // we might do a ds.depower() here, but the reset will take care of it.
+    present = myds.reset();
+    myds.select(addr);
+    myds.write(0xBE); // Read Scratchpad
+
+    Serial.print("  Data = ");
+    Serial.print(present, HEX);
+    Serial.print(" ");
+    for (i = 0; i < 9; i++) { // we need 9 bytes
+        data[i] = myds.read();
+        Serial.print(data[i], HEX);
+        Serial.print(" ");
+    }
+    myds.depower();
+    Serial.print(" CRC=");
+    Serial.print(OneWire::crc8(data, 8), HEX);
+    Serial.println();
+
+    // Convert the data to actual temperature
+    // because the result is a 16 bit signed integer, it should
+    // be stored to an "int16_t" type, which is always 16 bits
+    // even when compiled on a 32 bit processor.
+    int16_t raw = (data[1] << 8) | data[0];
+    if (type_s) {
+        raw = raw << 3; // 9 bit resolution default
+        if (data[7] == 0x10) {
+            // "count remain" gives full 12 bit resolution
+            raw = (raw & 0xFFF0) + 12 - data[6];
+        }
+    } else {
+        byte cfg = (data[4] & 0x60);
+        // at lower res, the low bits are undefined, so let's zero them
+        if (cfg == 0x00)
+            raw = raw & ~7; // 9 bit resolution, 93.75 ms
+        else if (cfg == 0x20)
+            raw = raw & ~3; // 10 bit res, 187.5 ms
+        else if (cfg == 0x40)
+            raw = raw & ~1; // 11 bit res, 375 ms
+        //// default is 12 bit resolution, 750 ms conversion time
+    }
+    tp = (float)raw / 16.0;
+    Serial.print("  Temperature = ");
+    Serial.println(tp);
+
+    VextOFF();
+    return (int16_t)(tp * 100.0);
+}
 
 // downlink data handle function example
 void downLinkDataHandle(McpsIndication_t* mcpsIndication)
@@ -1171,8 +1388,8 @@ void scale_init(void)
 {
     byte x = hx711_data.offset_vbat = readBatLevel();
 
-    hx711_data.offset_tempint = get_temperature(addr_int);
-    hx711_data.offset_tempext = get_temperature(addr_ext);
+    hx711_data.offset_tempint = get_temperature_int();
+    hx711_data.offset_tempext = get_temperature_ext();
     VextOFF();
     delay(10);
     Vhx711ON();
