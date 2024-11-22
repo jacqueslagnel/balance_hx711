@@ -236,8 +236,8 @@ void onWakeUp(void);
 // int8_t get_temperature(void);
 // int16_t get_temperature(byte addr[8]);
 // int8_t OneWireScan(void);
-int16_t get_temperature_int(void);
-int16_t get_temperature_ext(void);
+// int16_t get_temperature_int(void);
+// int16_t get_temperature_ext(void);
 int16_t get_temperature(OneWire& myds, uint8_t mypin);
 
 void downLinkDataHandle(McpsIndication_t* mcpsIndication);
@@ -294,24 +294,20 @@ void setup()
         vbat_mv = readBatLevel();
         get_weight_vbat_corrected();
 
-        hx711_data.tempint = get_temperature_int();
-        hx711_data.tempext = get_temperature_ext();
-
+        hx711_data.tempint = get_temperature(ds18b20_int, ONE_WIRE_INT);
+        hx711_data.tempext = get_temperature(ds18b20_ext, ONE_WIRE_EXT);
         byte yy = 0;
         while (hx711_data.tempint < -120 && yy < 3) {
-            hx711_data.tempint = get_temperature_int();
+            hx711_data.tempint = get_temperature(ds18b20_int, ONE_WIRE_INT);
             yy++;
             delay(100);
         }
-
         yy = 0;
         while (hx711_data.tempext < -120 && yy < 3) {
-            hx711_data.tempext = get_temperature_ext();
+            hx711_data.tempext = get_temperature(ds18b20_ext, ONE_WIRE_EXT);
             yy++;
             delay(100);
         }
-
-        yy = 0;
         // temp_old = tempext;
         // derivative = 0.00;
         // derivative_old = 0.00;
@@ -323,9 +319,9 @@ void setup()
         Serial.print("\tVbat-offset:\t");
         Serial.print(hx711_data.offset_vbat);
         Serial.print("\tTempint-offset:\t");
-        Serial.print(hx711_data.offset_tempint);
+        Serial.print(hx711_data.offset_tempint / 100.0);
         Serial.print("\tTempExt-offset:\t");
-        Serial.print(hx711_data.offset_tempext);
+        Serial.print(hx711_data.offset_tempext / 100.0);
 
         Serial.print("\tTempInt:\t");
         Serial.print(hx711_data.tempint / 100.0);
@@ -338,14 +334,7 @@ void setup()
         Serial.print("\tADC:\t");
         Serial.print(hx711_data.adc);
         Serial.print("\tpoids:\t");
-        Serial.println(hx711_data.poids_int);
-        hx711_data.tempint = get_temperature(ds18b20_int, ONE_WIRE_INT);
-        Serial.print("\nget_temperature by pointer TempInt:\t");
-        Serial.println(hx711_data.tempint / 100.0);
-
-        hx711_data.tempext = get_temperature(ds18b20_ext, ONE_WIRE_EXT);
-        Serial.print("get_temperature by pointer TempExt:\t");
-        Serial.println(hx711_data.tempext / 100.0);
+        Serial.println(hx711_data.poids_int/10.0);
 
         // poids = round_float(((double)(hx711_data.adc - hx711_data.offset_adc) / hx711_data.scale));
         // units10 = roundf(((double)(hx711_data.adc - hx711_data.offset_adc) / hx711_data.scale) * 10.000) / 10.000;
@@ -427,21 +416,20 @@ void loop()
         } else {
             vbat_mv = readBatLevel();
             get_weight_vbat_corrected();
+            hx711_data.tempint = get_temperature(ds18b20_int, ONE_WIRE_INT);
+            hx711_data.tempext = get_temperature(ds18b20_ext, ONE_WIRE_EXT);
             byte yy = 0;
-            hx711_data.tempint = get_temperature_int();
-            hx711_data.tempext = get_temperature_ext();
-            while (hx711_data.tempint < -12000 && yy < 3) {
-                hx711_data.tempint = get_temperature_int();
+            while (hx711_data.tempint < -120 && yy < 3) {
+                hx711_data.tempint = get_temperature(ds18b20_int, ONE_WIRE_INT);
                 yy++;
                 delay(100);
             }
             yy = 0;
-            while (hx711_data.tempext < -12000 && yy < 3) {
-                hx711_data.tempext = get_temperature_ext();
+            while (hx711_data.tempext < -120 && yy < 3) {
+                hx711_data.tempext = get_temperature(ds18b20_ext, ONE_WIRE_EXT);
                 yy++;
                 delay(100);
             }
-
 #ifdef DEBUGPRINT
             Serial.print("Timout:\t");
             Serial.print(time_sec_cycle);
@@ -947,6 +935,7 @@ int16_t get_temperature(byte addr[8])
     return (int16_t)(tp * 100.0);
 } */
 
+/*
 int16_t get_temperature_int(void)
 {
     // https://forum.arduino.cc/t/ds18b20-temperature-sensor-using-onewire-library/699347/10
@@ -1187,6 +1176,7 @@ int16_t get_temperature_ext(void)
     VextOFF();
     return (int16_t)(tp * 100.0);
 }
+*/
 
 int16_t get_temperature(OneWire& myds, uint8_t mypin)
 {
@@ -1211,8 +1201,21 @@ int16_t get_temperature(OneWire& myds, uint8_t mypin)
     pinMode(mypin, INPUT);
     myds.begin(mypin);
 
-    Serial.print(" present?:");
-    Serial.println(myds.reset());
+    // Serial.println(myds.reset());
+    if (myds.reset() < 1) {
+        if (mypin == ONE_WIRE_INT) {
+            Serial.println("TEMP INT NOT present");
+            global_fault = global_fault | 0b00000001;
+            VextOFF();
+            return -12700;
+        } else {
+            Serial.println("TEMP EXT NOT present");
+            global_fault = global_fault | 0b00000001;
+            VextOFF();
+            return -12700;
+        }
+    }
+
     myds.reset_search();
     myds.search(addr);
     myds.reset_search();
@@ -1222,17 +1225,19 @@ int16_t get_temperature(OneWire& myds, uint8_t mypin)
         Serial.println("CRC is not valid!");
         global_fault = global_fault | 0b00000001;
         VextOFF();
-        return -127;
+        return -12700;
     }
 
     type_s = 0; // DS18B20
     myds.reset();
     myds.select(addr);
+    /*
     for (i = 0; i < 8; i++) { // we need 9 bytes
         Serial.print(addr[i], HEX);
         Serial.print(" ");
     }
     Serial.println(" ");
+    */
     myds.write(0x4E);
     myds.write_bytes(dsRes, 3, 1); // set resolution bit
     myds.reset();
@@ -1245,28 +1250,30 @@ int16_t get_temperature(OneWire& myds, uint8_t mypin)
         busStatus = myds.read(); // keep reading until conversion is done
     } while (busStatus != 0xFF && (millis() - prMillis) < 900); // busStatus = 0xFF means conversion done
     //---------------------------
+    /*
     Serial.print("Conversion time: ");
     Serial.print(millis() - prMillis);
     Serial.println(" ms");
-
+*/
     // delay(250); // 1000mS, maybe 750ms is enough, maybe not
     // we might do a ds.depower() here, but the reset will take care of it.
     present = myds.reset();
     myds.select(addr);
     myds.write(0xBE); // Read Scratchpad
-
-    Serial.print("  Data = ");
-    Serial.print(present, HEX);
-    Serial.print(" ");
+    /*
+        Serial.print("  Data = ");
+        Serial.print(present, HEX);
+        Serial.print(" ");
+     */
     for (i = 0; i < 9; i++) { // we need 9 bytes
         data[i] = myds.read();
-        Serial.print(data[i], HEX);
-        Serial.print(" ");
+        // Serial.print(data[i], HEX);
+        // Serial.print(" ");
     }
     myds.depower();
-    Serial.print(" CRC=");
-    Serial.print(OneWire::crc8(data, 8), HEX);
-    Serial.println();
+    // Serial.print(" CRC=");
+    // Serial.print(OneWire::crc8(data, 8), HEX);
+    // Serial.println();
 
     // Convert the data to actual temperature
     // because the result is a 16 bit signed integer, it should
@@ -1291,8 +1298,8 @@ int16_t get_temperature(OneWire& myds, uint8_t mypin)
         //// default is 12 bit resolution, 750 ms conversion time
     }
     tp = (float)raw / 16.0;
-    Serial.print("  Temperature = ");
-    Serial.println(tp);
+    //  Serial.print("  Temperature = ");
+    //  Serial.println(tp);
 
     VextOFF();
     return (int16_t)(tp * 100.0);
@@ -1396,9 +1403,20 @@ void myturnOffRGB(void)
 void scale_init(void)
 {
     byte x = hx711_data.offset_vbat = readBatLevel();
-
-    hx711_data.offset_tempint = get_temperature_int();
-    hx711_data.offset_tempext = get_temperature_ext();
+    hx711_data.offset_tempint = get_temperature(ds18b20_int, ONE_WIRE_INT);
+    hx711_data.offset_tempext = get_temperature(ds18b20_ext, ONE_WIRE_EXT);
+    byte yy = 0;
+    while (hx711_data.offset_tempint < -1200 && yy < 3) {
+        hx711_data.offset_tempint = get_temperature(ds18b20_int, ONE_WIRE_INT);
+        yy++;
+        delay(100);
+    }
+    yy = 0;
+    while (hx711_data.offset_tempext < -1200 && yy < 3) {
+        hx711_data.offset_tempext = get_temperature(ds18b20_ext, ONE_WIRE_EXT);
+        yy++;
+        delay(100);
+    }
     VextOFF();
     delay(10);
     Vhx711ON();
