@@ -53,12 +53,12 @@ typedef enum mycolor {
 #ifdef LORAINRAE
 // OTAA  chip id and ssl key OK
 // hh=$(openssl rand -hex 8);echo $hh;echo $hh|sed 's/\(..\)/0x\1, /g'
-// 984505854ed83839
-uint8_t devEui[] = { 0x98, 0x45, 0x05, 0x85, 0x4e, 0xd8, 0x38, 0x39 };
+// 2824b13d35e0f2ab
+uint8_t devEui[] = { 0x28, 0x24, 0xb1, 0x3d, 0x35, 0xe0, 0xf2, 0xab };
 uint8_t appEui[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 // hh=$(openssl rand -hex 16);echo $hh;echo $hh|sed 's/\(..\)/0x\1, /g'
-// 2b4178609b1a32a88c5271ab05eb9980
-uint8_t appKey[] = { 0x2b, 0x41, 0x78, 0x60, 0x9b, 0x1a, 0x32, 0xa8, 0x8c, 0x52, 0x71, 0xab, 0x05, 0xeb, 0x99, 0x80 };
+// 3d4363ebad23b1dd4c8d3d8536cfdea6
+uint8_t appKey[] = { 0x3d, 0x43, 0x63, 0xeb, 0xad, 0x23, 0xb1, 0xdd, 0x4c, 0x8d, 0x3d, 0x85, 0x36, 0xcf, 0xde, 0xa6 };
 #else
 // OTAA : maison joining ok but where? But no TTN
 uint8_t devEui[] = { 0x22, 0x32, 0x33, 0x00, 0x00, 0x88, 0x88, 0x02 }; // ori 0x02
@@ -259,7 +259,7 @@ volatile uint16_t time_sec_cycle = 150; // 5 * 60; // seconds
 
 // ************************** if debug we use print ********************
 #define DEBUGPRINT 1
-// #define TESTING 1
+#define TESTING 1
 //   *********************************************************************
 
 void setup()
@@ -295,22 +295,23 @@ void setup()
         get_weight_vbat_corrected();
 
         hx711_data.tempint = get_temperature_int();
-        hx711_data.tempext = get_temperature_int();
+        hx711_data.tempext = get_temperature_ext();
+
         byte yy = 0;
         while (hx711_data.tempint < -120 && yy < 3) {
             hx711_data.tempint = get_temperature_int();
             yy++;
             delay(100);
         }
+
         yy = 0;
         while (hx711_data.tempext < -120 && yy < 3) {
-            hx711_data.tempext = get_temperature_int();
+            hx711_data.tempext = get_temperature_ext();
             yy++;
             delay(100);
         }
-        hx711_data.tempint = get_temperature(ds18b20_int, ONE_WIRE_INT);
-        Serial.print("\nget_temperature by pointer TempInt:\t");
-        Serial.println(hx711_data.tempint / 100.0);
+
+        yy = 0;
         // temp_old = tempext;
         // derivative = 0.00;
         // derivative_old = 0.00;
@@ -338,6 +339,14 @@ void setup()
         Serial.print(hx711_data.adc);
         Serial.print("\tpoids:\t");
         Serial.println(hx711_data.poids_int);
+        hx711_data.tempint = get_temperature(ds18b20_int, ONE_WIRE_INT);
+        Serial.print("\nget_temperature by pointer TempInt:\t");
+        Serial.println(hx711_data.tempint / 100.0);
+
+        hx711_data.tempext = get_temperature(ds18b20_ext, ONE_WIRE_EXT);
+        Serial.print("get_temperature by pointer TempExt:\t");
+        Serial.println(hx711_data.tempext / 100.0);
+
         // poids = round_float(((double)(hx711_data.adc - hx711_data.offset_adc) / hx711_data.scale));
         // units10 = roundf(((double)(hx711_data.adc - hx711_data.offset_adc) / hx711_data.scale) * 10.000) / 10.000;
         // Serial.printf("%0.1f\t%d", units10, poids);
