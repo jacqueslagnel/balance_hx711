@@ -134,8 +134,7 @@ uint8_t confirmedNbTrials = 4;
 // Addr: 28 77 B FF D 0 0 88       Time: 77 ms     Data = 1 60 1 0 0 1F FF 10 10 DD  CRC=DD        Temperature = 22.00
 // Addr: 28 4B 62 A5 C 0 0 92      Time: 75 ms     Data = 1 B0 1 0 0 1F FF 10 10 52  CRC=52        Temperature = 27.00
 // TempInt:        22      TempExt:        27
-byte addr_int[8] = { 0x28, 0x77, 0x0B, 0xFF, 0x0D, 0x00, 0x00, 0x88 };
-byte addr_ext[8] = { 0x28, 0x4B, 0x62, 0xA5, 0x0C, 0x00, 0x00, 0x92 };
+
 OneWire ds18b20_int(ONE_WIRE_INT); // on pin GPIO1 PIN 6 (a 4.7K resistor is necessary)
 OneWire ds18b20_ext(ONE_WIRE_EXT); // on pin GPIO1 PIN 6 (a 4.7K resistor is necessary)
 // OneWire ds18b20_ext(ONE_WIRE_BUS_EXT); // on digital pin 2
@@ -259,8 +258,8 @@ volatile uint16_t time_sec_cycle = 150; // 5 * 60; // seconds
 
 // ************************** if debug we use print ********************
 #define DEBUGPRINT 1
-#define TESTING 1
-//   *********************************************************************
+// #define TESTING 1
+//    *********************************************************************
 
 void setup()
 {
@@ -334,7 +333,7 @@ void setup()
         Serial.print("\tADC:\t");
         Serial.print(hx711_data.adc);
         Serial.print("\tpoids:\t");
-        Serial.println(hx711_data.poids_int/10.0);
+        Serial.println(hx711_data.poids_int / 10.0);
 
         // poids = round_float(((double)(hx711_data.adc - hx711_data.offset_adc) / hx711_data.scale));
         // units10 = roundf(((double)(hx711_data.adc - hx711_data.offset_adc) / hx711_data.scale) * 10.000) / 10.000;
@@ -674,7 +673,8 @@ uint16_t readBatLevel(void)
 
     voltage = getBatteryVoltage();
     voltage = getBatteryVoltage();
-    float vf = (float)voltage * 1.634;
+    // float vf = (float)voltage * 1.634;
+    float vf = (float)voltage * 1.0000;
     voltage = (uint16_t)round_float(vf);
     digitalWrite(VEXT_VBAT_PIN, HIGH);
     pinMode(INT_GPIO, INPUT);
@@ -1199,21 +1199,20 @@ int16_t get_temperature(OneWire& myds, uint8_t mypin)
     VextON();
     delay(150);
     pinMode(mypin, INPUT);
+    global_fault = global_fault & 0b11111100;
     myds.begin(mypin);
 
     // Serial.println(myds.reset());
     if (myds.reset() < 1) {
         if (mypin == ONE_WIRE_INT) {
-            Serial.println("TEMP INT NOT present");
+            // Serial.println("TEMP INT NOT present");
             global_fault = global_fault | 0b00000001;
-            VextOFF();
-            return -12700;
         } else {
-            Serial.println("TEMP EXT NOT present");
-            global_fault = global_fault | 0b00000001;
-            VextOFF();
-            return -12700;
+            //  Serial.println("TEMP EXT NOT present");
+            global_fault = global_fault | 0b00000010;
         }
+        VextOFF();
+        return -12700;
     }
 
     myds.reset_search();
@@ -1222,9 +1221,14 @@ int16_t get_temperature(OneWire& myds, uint8_t mypin)
     global_fault = global_fault & 0b11111110;
 
     if (OneWire::crc8(addr, 7) != addr[7]) {
-        Serial.println("CRC is not valid!");
-        global_fault = global_fault | 0b00000001;
+        // Serial.println("CRC is not valid!");
+        if (mypin == ONE_WIRE_INT) {
+            global_fault = global_fault | 0b00000001;
+        } else {
+            global_fault = global_fault | 0b00000010;
+        }
         VextOFF();
+        hx711_data.fault = global_fault;
         return -12700;
     }
 
@@ -1426,7 +1430,7 @@ void scale_init(void)
     // derivative_old = 0.00;
     scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
 
-    global_fault = global_fault & 0b11111001;
+    global_fault = global_fault & 0b11110011;
     if (scale.wait_ready_retry(4, 250)) {
         long mylong = scale.read_average(10);
 #ifdef DEBUGPRINT
@@ -1436,11 +1440,11 @@ void scale_init(void)
 #ifdef DEBUGPRINT
         Serial.println("NO HX711 1");
 #endif
-        global_fault = global_fault | 0b00000010;
+        global_fault = global_fault | 0b00000100;
     }
 
     if (hx711_data.offset_adc == 0) {
-        global_fault = global_fault | 0b00000100;
+        global_fault = global_fault | 0b00001000;
         if (scale.wait_ready_retry(4, 250)) {
             scale.tare(70);
             hx711_data.offset_adc = scale.get_offset();
@@ -1452,7 +1456,7 @@ void scale_init(void)
 #ifdef DEBUGPRINT
             Serial.println("NO HX711 2");
 #endif
-            global_fault = global_fault | 0b00000010;
+            global_fault = global_fault | 0b00000100;
         }
     } else {
         scale.set_offset(hx711_data.offset_adc);
