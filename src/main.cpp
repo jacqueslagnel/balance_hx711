@@ -253,11 +253,11 @@ void fram_test(void);
 // *****************************************************************************
 
 // ************************** timout ********************************
-volatile uint16_t time_sec_cycle = 150; // 5 * 60; // seconds
+volatile uint16_t time_sec_cycle = 60; // 5 * 60; // seconds
 // ************************************************************************************
 
 // ************************** if debug we use print ********************
-#define DEBUGPRINT 1
+// #define DEBUGPRINT 1
 // #define TESTING 1
 //    *********************************************************************
 
@@ -448,6 +448,7 @@ void loop()
             Serial.flush();
 #endif
 
+            Serial.print(">");
             Serial.print(global_fault);
             Serial.print(",");
             Serial.print(hx711_data.offset_adc);
