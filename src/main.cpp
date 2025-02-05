@@ -257,8 +257,8 @@ volatile uint16_t time_sec_cycle = 60; // 5 * 60; // seconds
 // ************************************************************************************
 
 // ************************** if debug we use print ********************
-// #define DEBUGPRINT 1
-// #define TESTING 1
+#define DEBUGPRINT 1
+ #define TESTING 1
 //    *********************************************************************
 
 void setup()
@@ -1429,8 +1429,8 @@ void scale_init(void)
     // temp_old = tempext;
     // derivative = 0.00;
     // derivative_old = 0.00;
-    scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
-
+    scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN,64);
+scale.set_gain(64);
     global_fault = global_fault & 0b11110011;
     if (scale.wait_ready_retry(4, 250)) {
         long mylong = scale.read_average(10);
@@ -1516,7 +1516,8 @@ uint8_t get_weight_vbat_corrected(void)
     Vhx711ON();
     global_fault = global_fault & 0b11110101; // clear hx711 fault
     delay(200);
-    scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
+    scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN,64);
+    //scale.set_gain(64);
     hx711_data.adc = 0;
     scale.power_up();
     delay(150);
